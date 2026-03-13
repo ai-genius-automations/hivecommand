@@ -193,7 +193,12 @@ function ProjectForm({
       queryClient.invalidateQueries({ queryKey: ['ruflo-status'] });
       // Trigger ruflo install in background if toggled on
       if (installRuflo && data.project?.id) {
-        api.projects.rufloInstall(data.project.id).catch(() => {});
+        const projectId = data.project.id;
+        api.projects.rufloInstall(projectId).then(() => {
+          queryClient.invalidateQueries({ queryKey: ['ruflo-status'] });
+        }).catch(() => {
+          queryClient.invalidateQueries({ queryKey: ['ruflo-status'] });
+        });
       }
       onSubmit();
       if (data.project?.id) {

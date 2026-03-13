@@ -203,8 +203,10 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       projects.map(async (p) => {
         const hasMemory = hasValidMemoryDb(p.path);
         const hasSwarm = existsSync(join(p.path, '.swarm'));
+        const hasClaudeFlow = existsSync(join(p.path, '.claude-flow', 'config.yaml'));
+        const hasClaudeSettings = existsSync(join(p.path, '.claude', 'settings.json'));
         return [p.id, {
-          installed: hasSwarm || hasMemory,
+          installed: hasSwarm || hasMemory || hasClaudeFlow || hasClaudeSettings,
           version: null,
           memoryInitialized: hasMemory,
         }] as const;
