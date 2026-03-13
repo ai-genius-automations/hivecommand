@@ -5,7 +5,7 @@ import { readdir, mkdir, readFile, writeFile } from 'fs/promises';
 import { join, resolve, basename } from 'path';
 import { homedir } from 'os';
 import { execFile, execFileSync } from 'child_process';
-import { existsSync, statSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, statSync, readFileSync, writeFileSync } from 'fs';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
@@ -240,6 +240,10 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     if (!project) return reply.status(404).send({ error: 'Project not found' });
 
     const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    // Ensure project directory exists (user may have typed a path that doesn't exist yet)
+    if (!existsSync(project.path)) {
+      mkdirSync(project.path, { recursive: true });
+    }
     const opts = { cwd: project.path, timeout: 180_000 };
     const output: string[] = [];
 
