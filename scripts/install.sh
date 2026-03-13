@@ -60,10 +60,11 @@ OS="$(uname -s)"
 log_step 1 "Checking prerequisites..."
 
 # Helper: prompt user to install something or exit
+# Works even when piped (curl | bash) by reading from /dev/tty
 prompt_install() {
   local name="$1"
   local install_msg="$2"
-  if [ -t 0 ] && [ -t 1 ]; then
+  if [ -e /dev/tty ]; then
     echo ""
     echo -n "  $name is required. Install it now? [Y/n]: "
     read -r answer < /dev/tty 2>/dev/null || answer="y"
@@ -75,7 +76,7 @@ prompt_install() {
     esac
     return 0  # user said yes
   else
-    # Non-interactive — can't prompt
+    # Truly non-interactive (no terminal at all)
     log_error "$name is required but not installed."
     echo ""
     echo "  $install_msg"
@@ -167,7 +168,7 @@ if [ "$CLAUDE_INITIALIZED" = false ]; then
   echo "    1. claude                              # Accept terms & sign in"
   echo "    2. claude --dangerously-skip-permissions  # Enable non-interactive mode"
   echo ""
-  if [ -t 0 ] && [ -t 1 ]; then
+  if [ -e /dev/tty ]; then
     echo -n "  Have you already done this? [y/N]: "
     read -r answer < /dev/tty 2>/dev/null || answer="n"
     case "$answer" in
@@ -439,8 +440,8 @@ elif [ "$DESKTOP_AVAILABLE" = false ]; then
       log_info "Desktop app not found for this release — use the web dashboard at http://localhost:42010"
       ;;
   esac
-elif [ -t 0 ] && [ -t 1 ]; then
-  # Interactive — prompt
+elif [ -e /dev/tty ]; then
+  # Interactive — prompt (works even when piped: curl | bash)
   echo ""
   echo -n "Install the OpenFlow desktop app? [y/N]: "
   read -r answer < /dev/tty 2>/dev/null || answer="n"
