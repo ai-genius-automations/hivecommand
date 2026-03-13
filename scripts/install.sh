@@ -425,19 +425,8 @@ case "$OS" in
 esac
 
 if [ -z "$DESKTOP_URL" ] && [ -n "$DESKTOP_FILE" ]; then
-  if [ -n "$GITHUB_TOKEN" ]; then
-    # Private repo — look up asset API URL from release info
-    if [ -z "${RELEASE_INFO:-}" ]; then
-      RELEASE_INFO=$(curl -sf "${AUTH_HEADER[@]}" "https://api.github.com/repos/$GITHUB_REPO/releases/tags/v${VERSION}" 2>/dev/null || echo "")
-    fi
-    DESKTOP_URL=$(echo "$RELEASE_INFO" | node -e "
-      let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
-        try{const r=JSON.parse(d);const a=(r.assets||[]).find(x=>x.name==='$DESKTOP_FILE');
-        if(a)console.log(a.url);else process.exit(1)}catch{process.exit(1)}
-      })" 2>/dev/null || echo "")
-  else
-    DESKTOP_URL="https://github.com/$GITHUB_REPO/releases/download/v${VERSION}/${DESKTOP_FILE}"
-  fi
+  # Always use the CDN URL for large binary downloads (fast)
+  DESKTOP_URL="https://github.com/$GITHUB_REPO/releases/download/v${VERSION}/${DESKTOP_FILE}"
 fi
 
 # Check if the desktop binary actually exists
