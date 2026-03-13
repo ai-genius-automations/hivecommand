@@ -62,6 +62,14 @@ fi
 
 OS="$(uname -s)"
 
+# Use sudo for system commands when not running as root
+SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo &>/dev/null; then
+    SUDO="sudo"
+  fi
+fi
+
 # --- Step 1: Check prerequisites ---------------------------------------------
 
 log_step 1 "Checking prerequisites..."
@@ -110,13 +118,13 @@ if [ "$NEED_NODE" = true ]; then
   log_info "Installing Node.js 22..."
   case "$OS" in
     Linux*)
-      apt-get update -qq
-      apt-get install -y -qq ca-certificates curl gnupg
-      mkdir -p /etc/apt/keyrings
-      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg 2>/dev/null || true
-      echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
-      apt-get update -qq
-      apt-get install -y -qq nodejs
+      $SUDO apt-get update -qq
+      $SUDO apt-get install -y -qq ca-certificates curl gnupg
+      $SUDO mkdir -p /etc/apt/keyrings
+      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | $SUDO gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg 2>/dev/null || true
+      echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | $SUDO tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+      $SUDO apt-get update -qq
+      $SUDO apt-get install -y -qq nodejs
       ;;
     Darwin*)
       if command -v brew &>/dev/null; then
@@ -142,7 +150,7 @@ fi
 if ! command -v claude &>/dev/null; then
   prompt_install "Claude Code" "Install with: npm install -g @anthropic-ai/claude-code"
   log_info "Installing Claude Code..."
-  npm install -g @anthropic-ai/claude-code 2>&1 | tail -1
+  $SUDO npm install -g @anthropic-ai/claude-code 2>&1 | tail -1
   if ! command -v claude &>/dev/null; then
     log_error "Claude Code installation failed. Install manually: npm install -g @anthropic-ai/claude-code"
     exit 1
@@ -214,8 +222,8 @@ case "$OS" in
     if [ ${#NEEDED[@]} -gt 0 ]; then
       NEEDED=($(echo "${NEEDED[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
       log_info "Installing: ${NEEDED[*]}..."
-      apt-get update -qq
-      apt-get install -y -qq "${NEEDED[@]}"
+      $SUDO apt-get update -qq
+      $SUDO apt-get install -y -qq "${NEEDED[@]}"
     fi
     ;;
   Darwin*)
@@ -359,7 +367,7 @@ log_step 5 "Starting OpenFlow..."
 # Remove legacy Tauri desktop app if installed
 if command -v dpkg &>/dev/null && dpkg -l open-flow &>/dev/null 2>&1; then
   log_info "Removing legacy desktop app (Tauri)..."
-  dpkg -r open-flow 2>&1 || true
+  $SUDO dpkg -r open-flow 2>&1 || true
 fi
 
 # Start (as target user if we're root)
@@ -422,11 +430,7 @@ install_desktop_app() {
   case "$OS" in
     Linux*)
       log_info "Installing desktop app (.deb)..."
-      if [ "$(id -u)" -eq 0 ]; then
-        dpkg -i "$TMPDESKTOP" 2>&1 || apt-get install -f -y -qq 2>&1
-      else
-        sudo dpkg -i "$TMPDESKTOP" 2>&1 || sudo apt-get install -f -y -qq 2>&1
-      fi
+      $SUDO dpkg -i "$TMPDESKTOP" 2>&1 || $SUDO apt-get install -f -y -qq 2>&1
       rm -f "$TMPDESKTOP"
       log_ok "Desktop app installed (launch from app menu or run: openflow-desktop)"
       ;;
