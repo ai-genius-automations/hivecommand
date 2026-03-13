@@ -1281,6 +1281,10 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
+    onError: (err: Error) => {
+      console.error('Failed to delete project:', err.message);
+      alert(`Failed to remove project: ${err.message}`);
+    },
   });
 
   // Show ProjectForm for add/edit views

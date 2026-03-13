@@ -183,9 +183,10 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
   // Delete project
   app.delete<{ Params: { id: string } }>('/projects/:id', async (req, reply) => {
     const db = getDb();
-    // Nullify foreign key references before deleting (sessions/tasks may reference this project)
+    // Nullify foreign key references before deleting (sessions/tasks/events may reference this project)
     db.prepare('UPDATE sessions SET project_id = NULL WHERE project_id = ?').run(req.params.id);
     db.prepare('UPDATE tasks SET project_id = NULL WHERE project_id = ?').run(req.params.id);
+    db.prepare('UPDATE events SET project_id = NULL WHERE project_id = ?').run(req.params.id);
     const result = db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
     if (result.changes === 0) return reply.status(404).send({ error: 'Project not found' });
 
@@ -256,7 +257,7 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
 
     // Run each step sequentially to avoid parallel npx downloads OOM on low-memory machines
     try {
-      const result = await execFileAsync(npx, ['ruflo@latest', 'init', '--force', '--minimal'], opts);
+      const result = await execFileAsync(npx, ['ruflo@latest', 'init', '--force'], opts);
       output.push('[ruflo init] ' + (result.stdout || 'done'));
     } catch (err: any) {
       output.push('[error] ' + (err.message || String(err)));
