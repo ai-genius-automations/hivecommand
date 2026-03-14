@@ -22,6 +22,44 @@
 
 ---
 
+## Screenshots
+
+<p align="center">
+<img src="docs/screenshots/active-sessions.png" alt="Active Sessions Grid" width="100%">
+</p>
+
+**Active Sessions Grid** — Monitor all your AI coding sessions at a glance. The grid view shows every running session across all projects — hive-mind agents, solo Claude Code sessions, and terminals — each with live-streaming output. Click any cell to expand, or use the column controls to fit your screen.
+
+<table>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/hivemind.png" alt="Hive-Mind Session">
+<p><b>Hive-Mind Session</b> — Multi-agent orchestration powered by RuFlo. A coordinator agent breaks your objective into subtasks, delegates to specialized workers, and uses Byzantine consensus to merge results. Shared memory and HNSW vector search let agents build on each other's work.</p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/web-tab.png" alt="Built-in Web Browser">
+<p><b>Built-in Web Browser</b> — Browse web pages directly inside OpenFlow alongside your coding sessions. Full browser with address bar, back/forward, and OAuth support — agents can build a web app and you can test it in the next tab without leaving the dashboard.</p>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/terminal.png" alt="Terminal Session">
+<p><b>Interactive Terminals</b> — Full terminal sessions managed through tmux. Pop out to a system terminal anytime, do your work, then adopt the session back into OpenFlow — it picks up right where you left off. Sessions persist across server restarts.</p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/source.png" alt="Git Source Control">
+<p><b>Git Source Control</b> — Built-in git integration with side-by-side diffs, staged/unstaged changes, commit history, and a file explorer. Review what your AI agents changed, stage files, and commit — all without leaving the dashboard.</p>
+</td>
+</tr>
+</table>
+
+**More highlights:**
+
+- **Reconnect anytime** — Close a tab, restart the server, even reboot — every session is backed by tmux and persists. Reconnect and pick up exactly where you left off with full scrollback.
+- **Pop out & adopt back** — Open any session in your system terminal (`tmux attach`), work with your favorite tools, then bring it back into the dashboard. No lock-in.
+- **Voice dictation** — Speak your instructions using local Whisper STT (no cloud, no data leaves your machine) or cloud APIs like OpenAI/Groq. API keys are encrypted at rest with AES-256-GCM.
+- **Per-project agents** — Define custom agent personas in `.claude/agents/*.md` and launch them from the dashboard. Each project gets its own RuFlo config and agent definitions.
+
 ---
 
 ## ✨ Features
