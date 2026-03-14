@@ -47,6 +47,11 @@
 <p><b>Interactive Terminals</b> — Full terminal sessions managed through tmux. Pop out to a system terminal anytime, do your work, then adopt the session back into OpenFlow — it picks up right where you left off. Sessions persist across server restarts.</p>
 </td>
 <td width="50%">
+<img src="docs/screenshots/source.png" alt="Git Source Control">
+<p><b>Git Source Control</b> — Built-in git integration with side-by-side diffs, staged/unstaged changes, commit history, and a file explorer. Review what your AI agents changed, stage files, and commit — all without leaving the dashboard.</p>
+</td>
+</tr>
+</table>
 
 **More highlights:**
 
@@ -54,12 +59,6 @@
 - **Pop out & adopt back** — Open any session in your system terminal (`tmux attach`), work with your favorite tools, then bring it back into the dashboard. No lock-in.
 - **Voice dictation** — Speak your instructions using local Whisper STT (no cloud, no data leaves your machine) or cloud APIs like OpenAI/Groq. API keys are encrypted at rest with AES-256-GCM.
 - **Per-project agents** — Define custom agent personas in `.claude/agents/*.md` and launch them from the dashboard. Each project gets its own RuFlo config and agent definitions.
-- **Task queue** — Queue up work items and let your agents work through them.
-- **Desktop app** — Electron app with system tray, auto-start server, and native speech-to-text.
-
-</td>
-</tr>
-</table>
 
 ---
 
@@ -70,6 +69,8 @@
 - **Agent Sessions** — Run single-agent sessions with custom agent definitions (`.claude/agents/*.md`)
 - **Interactive Terminals** — Full terminal sessions with tmux persistence — pop out to system terminal and adopt back anytime
 - **Built-in Web Browser** — Browse and test web apps alongside your coding sessions with full OAuth support
+- **Git Source Control** — Side-by-side diffs, staged changes, commit history, and file explorer — review and commit AI-generated changes in-app
+- **File Explorer** — Browse your project files, open and edit them, all from the sidebar
 - **Session Persistence** — Every session survives server restarts, tab closes, and reboots — reconnect with full scrollback
 - **Real-Time Streaming** — WebSocket-powered live output, tool calls, and progress tracking
 - **Multi-Project Support** — Per-project RuFlo initialization, agent configurations, and task queues
