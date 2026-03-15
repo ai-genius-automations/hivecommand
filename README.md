@@ -86,7 +86,7 @@
 | Platform | Status |
 |----------|--------|
 | **Linux** (Ubuntu/Debian) | ✅ Fully supported |
-| **macOS** | 🔜 Coming soon |
+| **macOS** (Intel & Apple Silicon) | ✅ Fully supported |
 
 ### Prerequisites
 
