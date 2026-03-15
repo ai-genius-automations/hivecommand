@@ -75,9 +75,6 @@ export class VadProcessor {
         const ambient = lowerHalf.reduce((a, b) => a + b, 0) / lowerHalf.length;
         this.energyThreshold = Math.min(Math.max(ambient * 3.0, 0.01), 0.03);
         this.calibrated = true;
-        console.error(
-          `[STT] VAD calibrated: ambient=${ambient.toFixed(6)}, threshold=${this.energyThreshold.toFixed(6)}`,
-        );
         events.push({ type: 'calibrated' });
       }
       return;
@@ -86,7 +83,7 @@ export class VadProcessor {
     const isSpeech = energy > this.energyThreshold;
 
     if (isSpeech && !this.isSpeaking) {
-      console.error(`[STT] VAD: speech started (energy=${energy.toFixed(4)})`);
+      // speech started (silent in production)
     }
 
     if (isSpeech) {
@@ -131,7 +128,6 @@ export class VadProcessor {
     this.resetState();
 
     if (utterance.length === 0) return null;
-    console.error(`[STT] VAD: speech ended (${durationMs}ms)`);
     return utterance;
   }
 

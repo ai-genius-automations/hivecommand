@@ -639,10 +639,7 @@ function wireAudioCaptureExit() {
 /** Briefly mute VAD to prevent audio cue beep from being detected as speech. */
 function muteVad() {
   if (state.vad) {
-    console.error('[STT] Muting VAD for 1000ms (beep suppression)');
     state.vad.mute(500); // 500ms covers beep + PulseAudio buffering + speaker→mic latency
-  } else {
-    console.error('[STT] muteVad called but no VAD instance');
   }
 }
 
@@ -767,7 +764,7 @@ function handleVadEvent(event: VadEvent, whisperBin: string, modelPath: string) 
             const matched = await matchCommandSmart(text);
             if (matched) {
               const cmd = matched.command;
-              console.error(`[STT] Command matched: "${cmd.name}" (param: "${matched.param}") from "${text}" [${matched.method}]`);
+              // Command matched (silent in production)
               if (cmd.action.kind === 'stop-listening') {
                 muteVad();
                 emit('stt://voice-command', { commandId: cmd.id, action: cmd.action, param: matched.param, rawText: text });
@@ -820,7 +817,7 @@ function handleVadEventCloud(event: VadEvent, provider: CloudProvider, apiKey: s
             const matched = await matchCommandSmart(text);
             if (matched) {
               const cmd = matched.command;
-              console.error(`[STT] Command matched: "${cmd.name}" (param: "${matched.param}") from "${text}" [${matched.method}]`);
+              // Command matched (silent in production)
               if (cmd.action.kind === 'stop-listening') {
                 muteVad();
                 emit('stt://voice-command', { commandId: cmd.id, action: cmd.action, param: matched.param, rawText: text });
@@ -877,7 +874,7 @@ function handleVadEventWakeWord(
               console.error(`[STT] Wake word detected in: "${text}"`);
               enterActivePhase();
             } else {
-              console.error(`[STT] Wake word check: "${text || '(empty)'}" — no match`);
+              // No wake word match (silent)
             }
           })
           .catch((err) => {
@@ -916,11 +913,10 @@ function handleVadEventWakeWord(
 
             if (matched) {
               const cmd = matched.command;
-              console.error(`[STT] Command matched: "${cmd.name}" (param: "${matched.param}") from "${text}" [${matched.method}]`);
+              // Command matched (silent in production)
 
               // Dismiss-commands: return to passive wake word mode
               if (cmd.action.kind === 'dismiss-commands') {
-                console.error('[STT] Dismiss command — returning to passive');
                 muteVad();
                 emit('stt://voice-command', {
                   commandId: cmd.id,
@@ -934,7 +930,6 @@ function handleVadEventWakeWord(
 
               // Stop-listening: stop mic entirely
               if (cmd.action.kind === 'stop-listening') {
-                console.error('[STT] Stop listening command — stopping mic');
                 muteVad();
                 emit('stt://voice-command', {
                   commandId: cmd.id,
