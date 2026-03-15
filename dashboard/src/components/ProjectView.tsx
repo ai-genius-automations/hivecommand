@@ -861,7 +861,7 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
                                   <span className="truncate">{s.task === 'Terminal' ? 'Interactive shell' : s.task?.slice(0, 50)}</span>
                                 </div>
                                 <div className="truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                  {s.status} · {s.created_at ? new Date(s.created_at).toLocaleTimeString() : 'unknown'}
+                                  {s.status} · {s.created_at ? new Date(s.created_at + (s.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString() : 'unknown'}
                                 </div>
                               </button>
                             );
@@ -910,7 +910,7 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
                                 <span className="truncate">{s.task?.slice(0, 60) || 'Session'}</span>
                               </div>
                               <div className="truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                {s.startedAt ? new Date(s.startedAt).toLocaleTimeString() : 'unknown time'}
+                                {s.startedAt ? new Date(s.startedAt + (String(s.startedAt).endsWith('Z') ? '' : 'Z')).toLocaleString() : 'unknown time'}
                               </div>
                             </button>
                           );
