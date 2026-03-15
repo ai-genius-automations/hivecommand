@@ -521,6 +521,7 @@ export function registerSpeechHandlers() {
             handleVadEventWakeWord(event, whisperBin, tinyModel, cloudProvider, cloudApiKey);
           }
         }, state.selectedDevice);
+        wireAudioCaptureExit();
       }
 
       state.wakeWordPhase = 'passive';
@@ -542,6 +543,7 @@ export function registerSpeechHandlers() {
             handleVadEventCloud(event, provider, apiKey);
           }
         }, state.selectedDevice);
+        wireAudioCaptureExit();
       }
     } else {
       // Local backend: need whisper binary + model
@@ -562,6 +564,7 @@ export function registerSpeechHandlers() {
             handleVadEvent(event, whisperBin, mPath);
           }
         }, state.selectedDevice);
+        wireAudioCaptureExit();
       }
     }
 
@@ -620,10 +623,26 @@ export function registerSpeechHandlers() {
 // Internal
 // ---------------------------------------------------------------------------
 
+/** Wire up audio capture exit handler to reset speaking state if capture dies. */
+function wireAudioCaptureExit() {
+  if (state.audioCapture) {
+    state.audioCapture.onExit = (code) => {
+      if (code !== 0 && state.speaking) {
+        console.error('[STT] Audio capture died while speaking — resetting speaking state');
+        state.speaking = false;
+        emit('stt://vad-status', { speaking: false });
+      }
+    };
+  }
+}
+
 /** Briefly mute VAD to prevent audio cue beep from being detected as speech. */
 function muteVad() {
   if (state.vad) {
-    state.vad.mute(500); // 500ms covers beep duration + speaker→mic latency
+    console.error('[STT] Muting VAD for 1000ms (beep suppression)');
+    state.vad.mute(500); // 500ms covers beep + PulseAudio buffering + speaker→mic latency
+  } else {
+    console.error('[STT] muteVad called but no VAD instance');
   }
 }
 
@@ -738,11 +757,11 @@ async function matchCommandSmart(text: string): Promise<SmartMatch | null> {
 function handleVadEvent(event: VadEvent, whisperBin: string, modelPath: string) {
   switch (event.type) {
     case 'utterance':
+      muteVad();
       emit('stt://transcribing');
       transcribe(whisperBin, modelPath, event.samples)
         .then(async (text) => {
           if (!text) { muteVad(); return; }
-          muteVad(); // mute before emit so beep doesn't trigger VAD
           // In global mode, route through command matching (always-on command mode)
           if (state.mode === 'global' || state.mode === 'push-to-talk') {
             const matched = await matchCommandSmart(text);
@@ -750,6 +769,7 @@ function handleVadEvent(event: VadEvent, whisperBin: string, modelPath: string) 
               const cmd = matched.command;
               console.error(`[STT] Command matched: "${cmd.name}" (param: "${matched.param}") from "${text}" [${matched.method}]`);
               if (cmd.action.kind === 'stop-listening') {
+                muteVad();
                 emit('stt://voice-command', { commandId: cmd.id, action: cmd.action, param: matched.param, rawText: text });
                 stopCapture();
                 return;
@@ -759,11 +779,14 @@ function handleVadEvent(event: VadEvent, whisperBin: string, modelPath: string) 
                 const { exec } = require('child_process');
                 if (background) exec(shellCmd, { shell: true });
               }
+              muteVad();
               emit('stt://voice-command', { commandId: cmd.id, action: cmd.action, param: matched.param, rawText: text });
             } else {
+              muteVad();
               emit('stt://transcription', { text, isFinal: true });
             }
           } else {
+            muteVad();
             emit('stt://transcription', { text, isFinal: true });
           }
         })
@@ -778,6 +801,7 @@ function handleVadEvent(event: VadEvent, whisperBin: string, modelPath: string) 
       break;
 
     case 'calibrated':
+      muteVad();
       emit('stt://ready');
       break;
   }
@@ -786,11 +810,11 @@ function handleVadEvent(event: VadEvent, whisperBin: string, modelPath: string) 
 function handleVadEventCloud(event: VadEvent, provider: CloudProvider, apiKey: string) {
   switch (event.type) {
     case 'utterance':
+      muteVad();
       emit('stt://transcribing');
       transcribeCloud(provider, apiKey, event.samples)
         .then(async (text) => {
           if (!text) { muteVad(); return; }
-          muteVad(); // mute before emit so beep doesn't trigger VAD
           // In global mode, route through command matching (always-on command mode)
           if (state.mode === 'global' || state.mode === 'push-to-talk') {
             const matched = await matchCommandSmart(text);
@@ -798,6 +822,7 @@ function handleVadEventCloud(event: VadEvent, provider: CloudProvider, apiKey: s
               const cmd = matched.command;
               console.error(`[STT] Command matched: "${cmd.name}" (param: "${matched.param}") from "${text}" [${matched.method}]`);
               if (cmd.action.kind === 'stop-listening') {
+                muteVad();
                 emit('stt://voice-command', { commandId: cmd.id, action: cmd.action, param: matched.param, rawText: text });
                 stopCapture();
                 return;
@@ -807,11 +832,14 @@ function handleVadEventCloud(event: VadEvent, provider: CloudProvider, apiKey: s
                 const { exec } = require('child_process');
                 if (background) exec(shellCmd, { shell: true });
               }
+              muteVad();
               emit('stt://voice-command', { commandId: cmd.id, action: cmd.action, param: matched.param, rawText: text });
             } else {
+              muteVad();
               emit('stt://transcription', { text, isFinal: true });
             }
           } else {
+            muteVad();
             emit('stt://transcription', { text, isFinal: true });
           }
         })
@@ -826,6 +854,7 @@ function handleVadEventCloud(event: VadEvent, provider: CloudProvider, apiKey: s
       break;
 
     case 'calibrated':
+      muteVad();
       emit('stt://ready');
       break;
   }
@@ -856,7 +885,8 @@ function handleVadEventWakeWord(
           });
       } else {
         // Active: transcribe the command with the best available backend
-        emit('stt://transcribing');
+        muteVad();
+      emit('stt://transcribing');
 
         // Reset active timeout since user is speaking
         resetActiveTimeout();
@@ -880,7 +910,6 @@ function handleVadEventWakeWord(
               resetActiveTimeout();
               return;
             }
-            muteVad(); // mute before emit so beep doesn't trigger VAD
 
             // Match command: smart (GPT-5 mini) or regex fallback
             const matched = await matchCommandSmart(text);
@@ -892,6 +921,7 @@ function handleVadEventWakeWord(
               // Dismiss-commands: return to passive wake word mode
               if (cmd.action.kind === 'dismiss-commands') {
                 console.error('[STT] Dismiss command — returning to passive');
+                muteVad();
                 emit('stt://voice-command', {
                   commandId: cmd.id,
                   action: cmd.action,
@@ -905,6 +935,7 @@ function handleVadEventWakeWord(
               // Stop-listening: stop mic entirely
               if (cmd.action.kind === 'stop-listening') {
                 console.error('[STT] Stop listening command — stopping mic');
+                muteVad();
                 emit('stt://voice-command', {
                   commandId: cmd.id,
                   action: cmd.action,
@@ -925,6 +956,7 @@ function handleVadEventWakeWord(
               }
 
               // Emit to renderer
+              muteVad();
               emit('stt://voice-command', {
                 commandId: cmd.id,
                 action: cmd.action,
@@ -935,6 +967,7 @@ function handleVadEventWakeWord(
               resetActiveTimeout();
             } else {
               // No command match — emit as regular transcription
+              muteVad();
               emit('stt://transcription', { text, isFinal: true });
               resetActiveTimeout();
             }
@@ -953,6 +986,7 @@ function handleVadEventWakeWord(
       break;
 
     case 'calibrated':
+      muteVad();
       emit('stt://ready');
       break;
   }

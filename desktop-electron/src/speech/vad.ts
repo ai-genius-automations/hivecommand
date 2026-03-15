@@ -41,6 +41,7 @@ export class VadProcessor {
   mute(durationMs: number) {
     this.muteUntil = Date.now() + durationMs;
     this.resetState();
+    this.pending.length = 0; // discard any buffered audio
   }
 
   process(samples: Float32Array | number[]): VadEvent[] {

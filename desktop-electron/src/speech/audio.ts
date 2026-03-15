@@ -108,6 +108,7 @@ function listMacDevices(): AudioDevice[] {
  */
 export class AudioCapture {
   private proc: ChildProcess | null = null;
+  public onExit: ((code: number | null) => void) | null = null;
 
   constructor(
     private onData: (samples: Float32Array) => void,
@@ -192,6 +193,8 @@ export class AudioCapture {
 
     this.proc.on('close', (code) => {
       console.error(`[STT] Audio capture process exited with code ${code}`);
+      this.proc = null;
+      if (this.onExit) this.onExit(code);
     });
   }
 
