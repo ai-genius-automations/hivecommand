@@ -53,6 +53,12 @@ function migrateSettingsHookPaths(projectPath: string): string | null {
 const RUFLO_RUN = join(homedir(), '.hivecommand', 'ruflo-run.sh');
 const HAS_RUFLO_RUN = existsSync(RUFLO_RUN);
 
+/** SONA patch script — patches ruflo's hook-handler.cjs with trajectory learning.
+ *  Ships in this repo (scripts/patch-sona.sh) so all devs get it.
+ *  Version-gated: auto-disables when ruflo ships native SONA support. */
+const SONA_PATCH = join(__dirname, '..', '..', '..', 'scripts', 'patch-sona.sh');
+const HAS_SONA_PATCH = existsSync(SONA_PATCH);
+
 /**
  * Check if a project already has a valid RuFlo memory database.
  * Returns true if .swarm/memory.db exists and has actual content (schema).
@@ -322,6 +328,21 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     // Patch relative/broken hook paths to absolute after ruflo writes settings
     const migrated = migrateSettingsHookPaths(project.path);
     if (migrated) output.push(migrated);
+
+    // Patch SONA trajectory learning into ruflo hooks (version-gated, idempotent)
+    if (HAS_SONA_PATCH) {
+      try {
+        const sonaResult = await execFileAsync('bash', [SONA_PATCH, project.path], {
+          cwd: project.path, timeout: 30_000,
+        });
+        if (sonaResult.stderr) {
+          const sonaLines = sonaResult.stderr.split('\n').filter(l => l.includes('✓') || l.includes('○'));
+          for (const line of sonaLines) output.push(line.trim());
+        }
+      } catch (err: any) {
+        output.push('[sona-patch] ' + (err.message || 'skipped'));
+      }
+    }
 
     // Clean up stale artifacts left by old ruflo versions.
     // agentdb is now bundled inside ruflo — stale local copies (v2 alpha) cause
