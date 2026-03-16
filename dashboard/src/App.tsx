@@ -6,7 +6,7 @@ import { api } from './lib/api';
 import { getPendingTerminalCount, onTerminalConnectionChange } from './components/Terminal';
 import { ProjectDashboard } from './components/ProjectDashboard';
 import { ProjectView, cleanupProjectStorage } from './components/ProjectView';
-import { Zap, X, LayoutGrid, FolderOpen, Monitor, Loader2, Settings, ArrowUpCircle } from 'lucide-react';
+import { X, LayoutGrid, FolderOpen, Monitor, Loader2, Settings, ArrowUpCircle } from 'lucide-react';
 import { isDesktop, getDesktopVersion } from './lib/tauri';
 import { AgentGuideButton } from './components/AgentGuide';
 import { CloseTabModal } from './components/CloseTabModal';
@@ -357,7 +357,7 @@ function Dashboard() {
         style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}
       >
         <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5" style={{ color: 'var(--accent)' }} />
+          <img src="/hivecommand-icon.png" alt="" className="w-5 h-5" />
           <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
             HiveCommand
           </h1>
