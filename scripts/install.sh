@@ -458,6 +458,150 @@ else
   "$LINK_DIR/hivecommand" start
 fi
 
+# --- Step 5b: Install hivecommand shell function ----------------------------
+
+# Shell function for launching hivemind sessions from the terminal with:
+# - dtach persistence (session survives terminal close)
+# - Process cleanup on exit (kills spawned daemons)
+# - Sidecar files for HiveCommand dashboard adoption
+# Works in bash and zsh, on Linux and macOS.
+
+HIVECOMMAND_FUNC_MARKER="# HiveCommand hivemind launcher function"
+HIVECOMMAND_FUNC_END="# end-hivecommand-hivemind"
+HIVECOMMAND_FUNC_BODY='hivecommand() {
+  local DEFAULT_PROMPT="start up and then ask me what I want you to do. DO NOT DO ANYTHING ELSE, NO TASKS! Just initialize and then prompt me"
+  local prompt="${*:-$DEFAULT_PROMPT}"
+
+  if [ "$PWD" = "$HOME" ]; then
+    echo "Note: Claude Code always prompts for workspace trust when run from your home directory. cd into a project to skip this."
+  fi
+
+  # Resolve ruflo-run.sh (shared cache or npx fallback)
+  local RUFLO_RUN="$HOME/.hivecommand/ruflo-run.sh"
+  if [ ! -f "$RUFLO_RUN" ]; then
+    echo "ruflo-run.sh not found. Using npx (slower)."
+    RUFLO_RUN=""
+  fi
+
+  _hc_run_ruflo() {
+    if [ -n "$RUFLO_RUN" ]; then
+      bash "$RUFLO_RUN" "$@"
+    else
+      npx ruflo@latest "$@"
+    fi
+  }
+
+  # Check for dtach — fall back to direct mode if missing
+  if ! command -v dtach &>/dev/null; then
+    echo "dtach not found, running without session persistence."
+    local before=$(pgrep -f "cli.js daemon" 2>/dev/null | sort)
+    local _hc_cleaned=0
+    _hc_cleanup() {
+      [ "$_hc_cleaned" = "1" ] && return
+      _hc_cleaned=1
+      echo ""
+      echo "Cleaning up hive-mind processes..."
+      local after=$(pgrep -f "cli.js daemon" 2>/dev/null | sort)
+      local new_daemons=$(comm -13 <(echo "$before") <(echo "$after"))
+      for pid in $new_daemons; do
+        pkill -P "$pid" 2>/dev/null
+        kill "$pid" 2>/dev/null
+      done
+      sleep 1
+      for pid in $new_daemons; do
+        kill -9 "$pid" 2>/dev/null
+      done
+      trap - EXIT INT TERM HUP
+    }
+    trap _hc_cleanup EXIT INT TERM HUP
+    _hc_run_ruflo hive-mind spawn "$prompt" --claude
+    _hc_cleanup
+    return
+  fi
+
+  # --- dtach mode: session survives terminal close ---
+  local sid="$(date +%s)-$$"
+  local sock="/tmp/hivemind-${sid}.sock"
+
+  # Write sidecar files for HiveCommand dashboard discovery/adoption
+  printf '\''%s\n'\'' "$(pwd)" > "/tmp/hivemind-${sid}.info"
+  printf '\''%s\n'\'' "$(date -Iseconds)" >> "/tmp/hivemind-${sid}.info"
+  printf '\''%s'\'' "$prompt" > "/tmp/hivemind-${sid}.prompt"
+
+  # Write inner script (cleanup lives inside dtach so it works after detach)
+  local inner="/tmp/hivemind-${sid}.run"
+  cat > "$inner" <<'\''RUNEOF'\''
+#!/bin/bash
+SOCK="$1"; shift
+PROMPT_FILE="${SOCK%.sock}.prompt"
+INFO_FILE="${SOCK%.sock}.info"
+PROMPT="$(cat "$PROMPT_FILE" 2>/dev/null)"
+
+before=$(pgrep -f "cli.js daemon" 2>/dev/null | sort)
+_cleaned=0
+_cleanup() {
+  [ "$_cleaned" = "1" ] && return; _cleaned=1
+  echo ""; echo "Cleaning up hive-mind processes..."
+  after=$(pgrep -f "cli.js daemon" 2>/dev/null | sort)
+  for pid in $(comm -13 <(echo "$before") <(echo "$after")); do
+    pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null
+  done
+  sleep 1
+  for pid in $(comm -13 <(echo "$before") <(echo "$after")); do
+    kill -9 "$pid" 2>/dev/null
+  done
+  rm -f "$SOCK" "$PROMPT_FILE" "$INFO_FILE" "$0"
+  trap - EXIT INT TERM
+}
+trap _cleanup EXIT INT TERM
+
+RUFLO_RUN="$HOME/.hivecommand/ruflo-run.sh"
+if [ -f "$RUFLO_RUN" ]; then
+  bash "$RUFLO_RUN" hive-mind spawn "$PROMPT" --claude
+else
+  npx ruflo@latest hive-mind spawn "$PROMPT" --claude
+fi
+_cleanup
+RUNEOF
+  chmod +x "$inner"
+
+  # Create dtach session in background, then attach
+  dtach -n "$sock" -Ez bash "$inner" "$sock"
+  sleep 0.2
+  dtach -a "$sock" -Ez
+
+  # If socket still exists after attach returns, session was detached (not exited)
+  if [ -S "$sock" ]; then
+    echo ""
+    echo "Session detached — still running in background."
+    echo "Reattach: dtach -a $sock -Ez"
+    echo "Or adopt in HiveCommand dashboard."
+  fi
+} '"$HIVECOMMAND_FUNC_END"
+
+_install_shell_func() {
+  local RC_FILE="$1"
+  [ ! -f "$RC_FILE" ] && return
+
+  # Remove old version if exists (uses end-marker for safe removal)
+  if grep -q "$HIVECOMMAND_FUNC_MARKER" "$RC_FILE" 2>/dev/null; then
+    if grep -q "^$HIVECOMMAND_FUNC_END" "$RC_FILE" 2>/dev/null; then
+      sed -i "/$HIVECOMMAND_FUNC_MARKER/,/^$HIVECOMMAND_FUNC_END/d" "$RC_FILE"
+    else
+      # Fallback: remove from marker to closing brace
+      sed -i "/$HIVECOMMAND_FUNC_MARKER/,/^}/d" "$RC_FILE"
+    fi
+  fi
+
+  echo "" >> "$RC_FILE"
+  echo "$HIVECOMMAND_FUNC_MARKER" >> "$RC_FILE"
+  echo "$HIVECOMMAND_FUNC_BODY" >> "$RC_FILE"
+  log_ok "Installed hivecommand() shell function in $(basename "$RC_FILE")"
+}
+
+_install_shell_func "$TARGET_HOME/.bashrc"
+_install_shell_func "$TARGET_HOME/.zshrc"
+
 # --- Step 6: Desktop app (optional) ------------------------------------------
 
 log_step 6 "Desktop app..."
@@ -588,6 +732,7 @@ echo "  CLI:        $LINK_DIR/hivecommand"
 echo "  Install:    $INSTALL_DIR"
 echo ""
 echo "Commands:"
+echo "  hivecommand                   # Launch hivemind session (CLI)"
 echo "  hivecommand status            # Check status"
 echo "  hivecommand stop              # Stop the server"
 echo "  hivecommand start             # Start the server"
