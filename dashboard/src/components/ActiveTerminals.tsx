@@ -80,6 +80,15 @@ export function ActiveTerminals({ onBack, onGoToSession, openProjectIds }: Activ
     return () => window.removeEventListener('resize', updateHeight);
   }, [columns, rows]);
 
+  // Force terminal redraw on mount — terminals render before the grid is laid out,
+  // so nudge cardHeight by ±1px after paint to trigger ResizeObserver in each Terminal
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const t1 = setTimeout(() => setMounted(true), 50);
+    const t2 = setTimeout(() => setMounted(false), 150);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
 
   const { data: sessionsData } = useQuery({
     queryKey: ['sessions'],
@@ -365,7 +374,7 @@ export function ActiveTerminals({ onBack, onGoToSession, openProjectIds }: Activ
                 style={{
                   borderColor: isFocused ? '#22c55e' : 'var(--border)',
                   background: 'var(--bg-secondary)',
-                  height: `${cardHeight}px`,
+                  height: `${cardHeight + (mounted ? 1 : 0)}px`,
                 }}
               >
                 {/* Card header */}
