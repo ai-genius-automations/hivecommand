@@ -8,6 +8,7 @@ import { Monitor, ArrowLeft, ExternalLink, Minimize2, Maximize2, ChevronDown, X,
 interface ActiveTerminalsProps {
   onBack: () => void;
   onGoToSession: (projectId: string, sessionId: string) => void;
+  openProjectIds?: string[];
 }
 
 interface SessionGroup {
@@ -25,10 +26,11 @@ interface ExpandedSession {
 const COLUMNS_KEY = 'hivecommand-active-terminals-cols';
 const ROWS_KEY = 'hivecommand-active-terminals-rows';
 
-export function ActiveTerminals({ onBack, onGoToSession }: ActiveTerminalsProps) {
+export function ActiveTerminals({ onBack, onGoToSession, openProjectIds }: ActiveTerminalsProps) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<ExpandedSession | null>(null);
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [colsOpen, setColsOpen] = useState(false);
   const [rowsOpen, setRowsOpen] = useState(false);
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
@@ -97,9 +99,17 @@ export function ActiveTerminals({ onBack, onGoToSession }: ActiveTerminalsProps)
     (s) => s.status === 'running' || s.status === 'detached'
   );
 
+  // Split into shown (open tab or plain terminal) vs hidden (tab not open)
+  const openSet = openProjectIds ? new Set(openProjectIds) : null;
+  const normallyShown = openSet
+    ? activeSessions.filter((s) => !s.project_id || openSet.has(s.project_id))
+    : activeSessions;
+  const hiddenCount = activeSessions.length - normallyShown.length;
+  const shownSessions = showAll ? activeSessions : normallyShown;
+
   // Group by project
   const groupMap = new Map<string, SessionGroup>();
-  for (const session of activeSessions) {
+  for (const session of shownSessions) {
     const key = session.project_id || '__plain__';
     if (!groupMap.has(key)) {
       const project = session.project_id ? projectMap.get(session.project_id) : null;
@@ -161,6 +171,23 @@ export function ActiveTerminals({ onBack, onGoToSession }: ActiveTerminalsProps)
           >
             {activeSessions.length}
           </span>
+          {hiddenCount > 0 && !showAll && (
+            <>
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full"
+                style={{ color: 'var(--text-secondary)', opacity: 0.7 }}
+              >
+                ({normallyShown.length} shown, {hiddenCount} hidden)
+              </span>
+              <button
+                onClick={() => setShowAll(true)}
+                className="text-[10px] font-medium hover:underline"
+                style={{ color: 'var(--accent)' }}
+              >
+                Show All
+              </button>
+            </>
+          )}
         </div>
 
         {/* Columns dropdown */}

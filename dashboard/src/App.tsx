@@ -583,6 +583,7 @@ function Dashboard() {
           <div className="absolute inset-0 z-20">
             <ActiveTerminals
               onBack={dismissActiveTerminals}
+              openProjectIds={projectTabs.map((t) => t.projectId)}
               onGoToSession={(projectId, sessionId) => {
                 const tab = projectTabs.find((t) => t.projectId === projectId);
                 if (tab) {
