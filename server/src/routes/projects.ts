@@ -326,6 +326,19 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       output.push('[hive-mind init] ' + (err.message || 'skipped'));
     }
 
+    // Register ruflo as a Claude Code MCP server (gives Claude 215+ tools).
+    // Uses ruflo-run.sh for fast cached execution; falls back to npx.
+    // Idempotent — claude mcp add overwrites if already registered.
+    try {
+      const mcpCmd = HAS_RUFLO_RUN
+        ? ['mcp', 'add', 'ruflo', '--', 'bash', RUFLO_RUN]
+        : ['mcp', 'add', 'ruflo', '--', 'npx', '-y', 'ruflo@latest'];
+      await execFileAsync('claude', mcpCmd, { ...opts, timeout: 30_000 });
+      output.push('[mcp] Registered ruflo as Claude Code MCP server');
+    } catch (err: any) {
+      output.push('[mcp] ' + (err.message || 'skipped — claude CLI not found'));
+    }
+
     // Patch relative/broken hook paths to absolute after ruflo writes settings
     const migrated = migrateSettingsHookPaths(project.path);
     if (migrated) output.push(migrated);
