@@ -305,11 +305,11 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
       return;
     }
 
-    // Voice command: create new terminal or hivemind
-    const createMatch = focusSessionId.match(/^__voice_create_(terminal|hivemind)$/);
+    // Voice command / quick-launch: create new terminal, hivemind, or agent
+    const createMatch = focusSessionId.match(/^__voice_create_(terminal|hivemind|agent)$/);
     if (createMatch) {
-      const type = createMatch[1] as 'terminal' | 'hivemind';
-      console.log(`[STT] Creating new ${type}`);
+      const type = createMatch[1] as 'terminal' | 'hivemind' | 'agent';
+      console.log(`[QuickLaunch] Creating new ${type}`);
       if (type === 'terminal') {
         api.sessions.create({ project_path: projectPath, mode: 'terminal', project_id: projectId })
           .then((data) => {
@@ -318,20 +318,27 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
               queryClient.invalidateQueries({ queryKey: ['sessions'] });
             }
           })
-          .catch((err) => console.error(`[STT] Failed to create terminal:`, err));
+          .catch((err) => console.error(`[QuickLaunch] Failed to create terminal:`, err));
       } else {
         const cfPrompt = (project?.ruflo_prompt ?? '').trim();
+        const defaultTask = 'Start up and ask me what I want you to do and NOTHING ELSE';
         const task = cfPrompt
-          ? `Start up and ask me what I want you to do and NOTHING ELSE\n\n---\nAdditional Instructions:\n${cfPrompt}`
-          : 'Start up and ask me what I want you to do and NOTHING ELSE';
-        api.sessions.create({ project_path: projectPath, task, project_id: projectId })
+          ? `${defaultTask}\n\n---\nAdditional Instructions:\n${cfPrompt}`
+          : defaultTask;
+        api.sessions.create({
+          project_path: projectPath,
+          task,
+          mode: type === 'agent' ? 'agent' : 'hivemind',
+          agent_type: type === 'agent' ? 'coder' : undefined,
+          project_id: projectId,
+        })
           .then((data) => {
             if (data.session?.id) {
               handleSessionCreated(data.session.id, undefined, 'hivemind');
               queryClient.invalidateQueries({ queryKey: ['sessions'] });
             }
           })
-          .catch((err) => console.error(`[STT] Failed to create hivemind:`, err));
+          .catch((err) => console.error(`[QuickLaunch] Failed to create ${type}:`, err));
       }
       onFocusSessionHandled?.();
       return;

@@ -291,12 +291,15 @@ function Dashboard() {
     saveAppState(activeTab, projectTabs);
   }, [activeTab, projectTabs]);
 
-  function handleOpenProject(projectId: string, projectName: string) {
+  function handleOpenProject(projectId: string, projectName: string, quickLaunch?: 'hivemind' | 'agent' | 'terminal') {
     setProjectTabs((prev) => {
       if (prev.find((t) => t.projectId === projectId)) return prev;
       return [...prev, { projectId, projectName }];
     });
     setActiveTab(`project-${projectId}`);
+    if (quickLaunch) {
+      setFocusSessionId(`__voice_create_${quickLaunch}`);
+    }
   }
 
   const [confirmClose, setConfirmClose] = useState<{ projectId: string; count: number } | null>(null);

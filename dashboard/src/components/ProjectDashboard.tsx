@@ -28,11 +28,13 @@ import {
   Zap,
   Download,
   Brain,
+  Bot,
+  TerminalSquare,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 
 interface ProjectDashboardProps {
-  onOpenProject: (projectId: string, projectName: string) => void;
+  onOpenProject: (projectId: string, projectName: string, quickLaunch?: 'hivemind' | 'agent' | 'terminal') => void;
 }
 
 type ViewState = { mode: 'list' } | { mode: 'add' } | { mode: 'edit'; project: Project };
@@ -1508,6 +1510,31 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5 mt-auto pt-1" onClick={(e) => e.stopPropagation()}>
+                      {/* Quick-launch buttons */}
+                      <button
+                        onClick={() => onOpenProject(project.id, project.name, 'hivemind')}
+                        className="p-1.5 rounded-lg border text-xs"
+                        style={{ background: '#3b82f615', borderColor: '#3b82f640', color: '#60a5fa' }}
+                        title="Quick launch Hive Mind"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => onOpenProject(project.id, project.name, 'agent')}
+                        className="p-1.5 rounded-lg border text-xs"
+                        style={{ background: '#ef444415', borderColor: '#ef444440', color: '#ef4444' }}
+                        title="Quick launch Coder Agent"
+                      >
+                        <Bot className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => onOpenProject(project.id, project.name, 'terminal')}
+                        className="p-1.5 rounded-lg border text-xs"
+                        style={{ background: '#f59e0b15', borderColor: '#f59e0b40', color: '#f59e0b' }}
+                        title="Quick launch Terminal"
+                      >
+                        <TerminalSquare className="w-3.5 h-3.5" />
+                      </button>
                       {/* Install ruflo button for projects without it */}
                       {!cfStatus?.installed && (
                         <button
@@ -1531,21 +1558,6 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
                         <span className="text-[10px]" style={{ color: '#f87171' }} title={installError}>
                           Failed - retry?
                         </span>
-                      )}
-                      {cfStatus?.installed && (
-                        <button
-                          onClick={() => handleRufloInstall(project.id)}
-                          disabled={isInstalling}
-                          className="flex items-center gap-1 p-1.5 rounded-lg border text-xs"
-                          style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border)', color: isInstalling ? '#facc15' : 'var(--text-secondary)' }}
-                          title={isInstalling ? 'Re-initializing RuFlo...' : 'Re-init RuFlo (update agents + memory)'}
-                        >
-                          {isInstalling ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          )}
-                        </button>
                       )}
                       <button
                         onClick={() => api.openFolder(project.path)}
@@ -1571,6 +1583,21 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
+                      {cfStatus?.installed && (
+                        <button
+                          onClick={() => handleRufloInstall(project.id)}
+                          disabled={isInstalling}
+                          className="flex items-center gap-1 p-1.5 rounded-lg border text-xs"
+                          style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border)', color: isInstalling ? '#facc15' : 'var(--text-secondary)' }}
+                          title={isInstalling ? 'Re-initializing RuFlo...' : 'Re-init RuFlo (update agents + memory)'}
+                        >
+                          {isInstalling ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      )}
                       <button
                         onClick={() => setConfirmDeleteId(project.id)}
                         className="p-1.5 rounded-lg border text-xs"
