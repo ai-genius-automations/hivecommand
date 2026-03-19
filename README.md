@@ -1,6 +1,6 @@
 <p align="center">
   <img src="dashboard/public/octoally-logo-lg.png" alt="OctoAlly" width="377" height="256">
-  <h1 align="center"><span style="font-size:48px"><span style="color:#3b82f6">Octo</span><span style="color:#ffffff">Ally</span></span></h1>
+  <img alt="OctoAlly" src="docs/octoally-title.svg" height="56">
   <p align="center">
     <strong>AI Coding Session Orchestration Dashboard</strong>
   </p>
