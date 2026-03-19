@@ -23,7 +23,7 @@ LEARNING_HOOKS="$PROJECT_PATH/.claude/helpers/learning-hooks.sh"
 SONA_PATCH_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches/SonaTrajectoryService.js"
 
 # Sentinels
-HOOK_SENTINEL="// SONA_PATCH_v1"
+HOOK_SENTINEL="// SONA_PATCH_v2"
 SONA_SENTINEL="Using native @ruvector/sona"
 
 # Colors (stderr only so stdout stays clean for machine consumption)
@@ -196,11 +196,23 @@ patch_hook_handler() {
   # Always regenerate sona-bridge.cjs (may have been updated)
   local wrapper="$PROJECT_PATH/.claude/helpers/sona-bridge.cjs"
 
-  # Check sentinel — if already patched, just update the bridge and return
+  # Check sentinel — if current version already patched, just update the bridge
   if grep -q "$HOOK_SENTINEL" "$HOOK_HANDLER" 2>/dev/null; then
     _write_sona_bridge "$wrapper"
     skip "hook-handler.cjs already patched (bridge updated)"
     return 0
+  fi
+
+  # Upgrade from v1: restore from pre-patch backup so we can re-apply cleanly
+  if grep -q "SONA_PATCH_v1" "$HOOK_HANDLER" 2>/dev/null; then
+    log "Upgrading from SONA_PATCH_v1 to v2..."
+    if [ -f "${HOOK_HANDLER}.pre-sona-patch" ]; then
+      cp "${HOOK_HANDLER}.pre-sona-patch" "$HOOK_HANDLER"
+    else
+      warn "No pre-sona-patch backup found — patching over v1 in-place"
+      # Strip old sentinel so the patch can apply fresh
+      sed -i 's|// SONA_PATCH_v1|// SONA_PATCH_v1_upgraded|' "$HOOK_HANDLER"
+    fi
   fi
 
   # Back up original
