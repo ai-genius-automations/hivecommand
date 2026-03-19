@@ -319,6 +319,28 @@ if launchctl list com.aigenius.hivecommand &>/dev/null 2>&1; then
   launchctl unload "$TARGET_HOME/Library/LaunchAgents/com.aigenius.hivecommand.plist" 2>/dev/null || true
   rm -f "$TARGET_HOME/Library/LaunchAgents/com.aigenius.hivecommand.plist"
 fi
+# Remove old HiveCommand desktop entries (Linux + macOS)
+for _dentry in /usr/share/applications/hivecommand-desktop.desktop \
+               "$TARGET_HOME/.local/share/applications/hivecommand-desktop.desktop" \
+               "$TARGET_HOME/.local/share/applications/HiveCommand.desktop"; do
+  if [ -f "$_dentry" ]; then
+    log_info "Removing old desktop entry: $_dentry"
+    if [ "$(dirname "$_dentry")" = "/usr/share/applications" ]; then
+      $SUDO rm -f "$_dentry"
+    else
+      rm -f "$_dentry"
+    fi
+  fi
+done
+# macOS: remove old HiveCommand app from /Applications
+if [ -d "/Applications/HiveCommand.app" ]; then
+  log_info "Removing old app: /Applications/HiveCommand.app"
+  $SUDO rm -rf "/Applications/HiveCommand.app"
+fi
+if [ -d "/opt/HiveCommand" ]; then
+  log_info "Removing old install: /opt/HiveCommand"
+  $SUDO rm -rf "/opt/HiveCommand"
+fi
 
 # --- Step 2: Download release ------------------------------------------------
 
