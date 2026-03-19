@@ -5,14 +5,18 @@
 #   e.g.: bash scripts/ruflo-run.sh hive-mind spawn 'do stuff' --claude
 #
 # Instead of `npx ruflo@latest` (which downloads every time), this script:
-#   1. Checks if ruflo is installed locally (~/.hivecommand/ruflo/)
+#   1. Checks if ruflo is installed locally (~/.octoally/ruflo/)
 #   2. Compares local version to npm registry (fast ~200ms check)
 #   3. Only downloads if there's a newer version (or no local install)
 #   4. Runs the local copy
 
 set -euo pipefail
 
-RUFLO_DIR="${RUFLO_HOME:-$HOME/.hivecommand/ruflo}"
+RUFLO_DIR="${RUFLO_HOME:-$HOME/.octoally/ruflo}"
+# Fallback to old path if new path doesn't exist yet
+if [ ! -d "$RUFLO_DIR" ] && [ -d "$HOME/.hivecommand/ruflo" ]; then
+  RUFLO_DIR="$HOME/.hivecommand/ruflo"
+fi
 RUFLO_BIN="$RUFLO_DIR/node_modules/.bin/ruflo"
 RUFLO_PKG="$RUFLO_DIR/package.json"
 REGISTRY_URL="https://registry.npmjs.org/ruflo/latest"

@@ -19,7 +19,7 @@ import type { ReadStream } from 'fs';
 
 const execFileAsync = promisify(execFile);
 
-const TIMING_LOG = '/tmp/hivecommand-timing.log';
+const TIMING_LOG = '/tmp/octoally-timing.log';
 function tlog(s: string): void {
   try { appendFileSync(TIMING_LOG, `[${new Date().toISOString()}] ${s}\n`); } catch {}
 }
@@ -76,20 +76,28 @@ type ParentMessage =
    tmux helpers (same as session-manager but local to worker)
    ================================================================ */
 
-const TMUX_SERVER = 'hivecommand';
+const TMUX_SERVER = 'octoally';
+const LEGACY_TMUX_SERVERS = ['hivecommand', 'openflow'];
 const tmuxBaseArgs = ['-L', TMUX_SERVER];
 
 function tmuxSessionName(sessionId: string): string {
   return `of-${sessionId}`;
 }
 
-function tmuxExists(sessionId: string): boolean {
-  try {
-    execFileSync('tmux', [...tmuxBaseArgs, 'has-session', '-t', tmuxSessionName(sessionId)], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+/** Find which tmux server hosts a session (checks legacy servers too) */
+function findTmuxServer(sessionId: string): string | null {
+  const name = tmuxSessionName(sessionId);
+  for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    try {
+      execFileSync('tmux', ['-L', server, 'has-session', '-t', name], { stdio: 'ignore' });
+      return server;
+    } catch { /* try next */ }
   }
+  return null;
+}
+
+function tmuxExists(sessionId: string): boolean {
+  return findTmuxServer(sessionId) !== null;
 }
 
 async function tmuxCreate(
@@ -113,7 +121,7 @@ async function tmuxCreate(
     ...runArgs,
   ], {
     cwd: projectPath,
-    env: { ...process.env, TERM: 'xterm-256color', HIVECOMMAND_SESSION: '1', HEADLESS_WORKERS_DISABLED: '1' } as Record<string, string>,
+    env: { ...process.env, TERM: 'xterm-256color', OCTOALLY_SESSION: '1', HIVECOMMAND_SESSION: '1', HEADLESS_WORKERS_DISABLED: '1' } as Record<string, string>,
   });
 
   try {
@@ -125,9 +133,13 @@ async function tmuxCreate(
 
 async function tmuxKill(sessionId: string): Promise<void> {
   const name = tmuxSessionName(sessionId);
-  try {
-    await execFileAsync('tmux', [...tmuxBaseArgs, 'kill-session', '-t', name]);
-  } catch { /* session already dead */ }
+  // Kill on whichever server hosts it (may be legacy)
+  for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    try {
+      await execFileAsync('tmux', ['-L', server, 'kill-session', '-t', name]);
+      return;
+    } catch { /* try next */ }
+  }
 }
 
 /* ================================================================
@@ -135,7 +147,12 @@ async function tmuxKill(sessionId: string): Promise<void> {
    ================================================================ */
 
 function dtachSocket(sessionId: string): string {
-  return `/tmp/hivecommand-${sessionId}.sock`;
+  // Check legacy prefixes for existing sessions
+  for (const prefix of ['octoally-', 'hivecommand-', 'openflow-']) {
+    const sock = `/tmp/${prefix}${sessionId}.sock`;
+    if (existsSync(sock)) return sock;
+  }
+  return `/tmp/octoally-${sessionId}.sock`;
 }
 
 function dtachExists(sessionId: string): boolean {
@@ -159,7 +176,7 @@ async function dtachCreate(sessionId: string, projectPath: string, command: stri
     '-n', sock, '-Ez', shell, '-i', '-c', command,
   ], {
     cwd: projectPath,
-    env: { ...process.env, TERM: 'xterm-256color', HIVECOMMAND_SESSION: '1', HEADLESS_WORKERS_DISABLED: '1' } as Record<string, string>,
+    env: { ...process.env, TERM: 'xterm-256color', OCTOALLY_SESSION: '1', HIVECOMMAND_SESSION: '1', HEADLESS_WORKERS_DISABLED: '1' } as Record<string, string>,
   });
 }
 
@@ -184,18 +201,19 @@ async function dtachKill(sessionId: string): Promise<void> {
    pipe-pane: capture raw application output via FIFO
    ================================================================ */
 
-const PIPE_PANE_DIR = join(tmpdir(), 'hivecommand-pipes');
+const PIPE_PANE_DIR = join(tmpdir(), 'octoally-pipes');
 mkdirSync(PIPE_PANE_DIR, { recursive: true });
 
-function setupPipePane(sessionId: string): { stream: ReadStream; fifoPath: string } | null {
+function setupPipePane(sessionId: string, server?: string): { stream: ReadStream; fifoPath: string } | null {
   const name = tmuxSessionName(sessionId);
+  const serverArgs = ['-L', server || TMUX_SERVER];
   const fifoPath = join(PIPE_PANE_DIR, `${sessionId}.fifo`);
 
   try {
     try { unlinkSync(fifoPath); } catch { /* doesn't exist */ }
     execFileSync('mkfifo', [fifoPath]);
     const stream = createReadStream(fifoPath, { encoding: 'utf8' });
-    execFileSync('tmux', [...tmuxBaseArgs, 'pipe-pane', '-O', '-t', name, `cat > ${fifoPath}`]);
+    execFileSync('tmux', [...serverArgs, 'pipe-pane', '-O', '-t', name, `cat > ${fifoPath}`]);
     return { stream, fifoPath };
   } catch (err) {
     console.error(`[PTY-WORKER] pipe-pane setup failed for ${sessionId}:`, err);
@@ -206,7 +224,8 @@ function setupPipePane(sessionId: string): { stream: ReadStream; fifoPath: strin
 
 function cleanupPipePane(sessionId: string, fifoPath?: string): void {
   const name = tmuxSessionName(sessionId);
-  try { execFileSync('tmux', [...tmuxBaseArgs, 'pipe-pane', '-t', name]); } catch { /* ignore */ }
+  const server = findTmuxServer(sessionId) || TMUX_SERVER;
+  try { execFileSync('tmux', ['-L', server, 'pipe-pane', '-t', name]); } catch { /* ignore */ }
   const path = fifoPath || join(PIPE_PANE_DIR, `${sessionId}.fifo`);
   try { unlinkSync(path); } catch { /* ignore */ }
 }
@@ -419,7 +438,7 @@ async function handleReconnect(msg: ReconnectMessage): Promise<void> {
   try {
     const hasTmuxSession = msg.useTmux && tmuxExists(msg.sessionId);
     const hasDtachSession = msg.useDtach && dtachExists(msg.sessionId);
-    const log = (s: string) => appendFileSync('/tmp/hivecommand-timing.log', s + '\n');
+    const log = (s: string) => appendFileSync('/tmp/octoally-timing.log', s + '\n');
     log(`[PTY-WORKER] ${msg.sessionId}: exists_check=${Date.now()-t0}ms`);
 
     if (!hasTmuxSession && !hasDtachSession) {
@@ -430,15 +449,17 @@ async function handleReconnect(msg: ReconnectMessage): Promise<void> {
 
     if (hasTmuxSession) {
       const t2 = Date.now();
-      const pp = setupPipePane(msg.sessionId);
-      log(`[PTY-WORKER] ${msg.sessionId}: pipe_pane=${Date.now()-t2}ms`);
+      const actualServer = findTmuxServer(msg.sessionId) || TMUX_SERVER;
+      const serverArgs = ['-L', actualServer];
+      const pp = setupPipePane(msg.sessionId, actualServer);
+      log(`[PTY-WORKER] ${msg.sessionId}: pipe_pane=${Date.now()-t2}ms (server=${actualServer})`);
       if (pp) {
         pipePaneStream = pp.stream;
         pipePaneFifo = pp.fifoPath;
         hasPipePane = true;
       }
       const t3 = Date.now();
-      ptyProcess = pty.spawn('tmux', [...tmuxBaseArgs, 'attach-session', '-t', tmuxSessionName(msg.sessionId)], {
+      ptyProcess = pty.spawn('tmux', [...serverArgs, 'attach-session', '-t', tmuxSessionName(msg.sessionId)], {
         name: 'xterm-256color', cols: msg.cols, rows: msg.rows,
         env: { ...process.env } as Record<string, string>,
       });

@@ -36,7 +36,7 @@ interface ProjectTab {
   projectName: string;
 }
 
-const APP_STATE_KEY = 'hivecommand-app-state-v2';
+const APP_STATE_KEY = 'octoally-app-state-v2';
 
 function loadAppState(): { activeTab: string; projectTabs: ProjectTab[] } | null {
   try {
@@ -143,7 +143,7 @@ function Dashboard() {
   // Copy update command to clipboard and show brief confirmation.
   const [updateCopied, setUpdateCopied] = useState(false);
   const triggerUpdate = useCallback(async () => {
-    const cmd = 'curl -fsSL https://raw.githubusercontent.com/ai-genius-automations/hivecommand/main/scripts/install.sh | bash';
+    const cmd = 'curl -fsSL https://raw.githubusercontent.com/ai-genius-automations/octoally/main/scripts/install.sh | bash';
     try {
       await navigator.clipboard.writeText(cmd);
       setUpdateCopied(true);
@@ -272,7 +272,7 @@ function Dashboard() {
         }
       } else if (payload.action.kind === 'close-project') {
         // Dispatch a custom event — handled after closeProjectTab is defined
-        window.dispatchEvent(new CustomEvent('hivecommand:voice-close-project', {
+        window.dispatchEvent(new CustomEvent('octoally:voice-close-project', {
           detail: { param: payload.param },
         }));
       } else if (payload.action.kind === 'refresh-tab') {
@@ -292,14 +292,14 @@ function Dashboard() {
         // Send Ctrl+W one at a time with small delays so the shell processes each
         for (let i = 0; i < count; i++) {
           setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('hivecommand:terminal-input', {
+            window.dispatchEvent(new CustomEvent('octoally:terminal-input', {
               detail: { data: '\x17' },
             }));
           }, i * 50);
         }
       } else if (payload.action.kind === 'clear-text') {
         // Ctrl+U = kill line in bash/zsh
-        window.dispatchEvent(new CustomEvent('hivecommand:terminal-input', {
+        window.dispatchEvent(new CustomEvent('octoally:terminal-input', {
           detail: { data: '\x15' },
         }));
       }
@@ -372,8 +372,8 @@ function Dashboard() {
         }
       }
     };
-    window.addEventListener('hivecommand:voice-close-project', handler);
-    return () => window.removeEventListener('hivecommand:voice-close-project', handler);
+    window.addEventListener('octoally:voice-close-project', handler);
+    return () => window.removeEventListener('octoally:voice-close-project', handler);
   }, [projects, activeTab, closeProjectTab]);
 
   async function confirmCloseProject() {
@@ -414,9 +414,9 @@ function Dashboard() {
         style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}
       >
         <div className="flex items-center gap-2">
-          <img src="/hivecommand-icon.png" alt="" className="w-5 h-5" />
+          <img src="/octoally-icon.png" alt="" className="w-5 h-5" />
           <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            HiveCommand
+            OctoAlly
           </h1>
           <div className="flex items-center gap-1">
             {desktopVersion && (
@@ -502,7 +502,7 @@ function Dashboard() {
           <div className="flex items-center gap-2">
             <ArrowUpCircle className="w-3.5 h-3.5 shrink-0" style={{ color: '#60a5fa' }} />
             <span style={{ color: 'var(--text-secondary)' }}>
-              <strong style={{ color: 'var(--text-primary)' }}>HiveCommand v{versionData.latest}</strong>
+              <strong style={{ color: 'var(--text-primary)' }}>OctoAlly v{versionData.latest}</strong>
               {versionData.prerelease && <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ background: 'rgba(250, 204, 21, 0.15)', color: '#facc15' }}>pre-release</span>}
               {' '}is available
               {versionData.name && <span> &mdash; {versionData.name}</span>}

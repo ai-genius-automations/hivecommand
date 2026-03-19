@@ -1,6 +1,6 @@
 {
-  "name": "hivecommand",
-  "version": "0.1.45-alpha",
+  "name": "octoally",
+  "version": "0.1.44-alpha",
   "description": "AI coding session orchestration dashboard — launch, monitor, and manage Claude Code sessions from a web UI",
   "type": "module",
   "scripts": {
@@ -24,10 +24,10 @@
   },
   "author": "AI Genius Automations <support@aigeniusautomations.com>",
   "license": "Apache-2.0 WITH Commons-Clause",
-  "homepage": "https://github.com/ai-genius-automations/hivecommand",
+  "homepage": "https://github.com/ai-genius-automations/octoally",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ai-genius-automations/hivecommand.git"
+    "url": "https://github.com/ai-genius-automations/octoally.git"
   },
   "dependencies": {
     "@xterm/addon-web-links": "^0.12.0"

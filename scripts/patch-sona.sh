@@ -84,7 +84,7 @@ function hasBetterSqlite3() {
     const localPath = path.join(projectRoot, 'node_modules', 'better-sqlite3');
     if (fs.existsSync(localPath)) return true;
     // Check shared ruflo cache
-    const sharedPath = path.join(require('os').homedir(), '.hivecommand', 'ruflo', 'node_modules', 'better-sqlite3');
+    const sharedPath = path.join(require('os').homedir(), '.octoally', 'ruflo', 'node_modules', 'better-sqlite3');
     if (fs.existsSync(sharedPath)) return true;
     return false;
   } catch { return false; }
@@ -298,7 +298,7 @@ patch_sona_service() {
   [ -f "$LOCAL" ] && TARGETS+=("$LOCAL")
 
   # Shared ruflo cache
-  local SHARED="$HOME/.hivecommand/ruflo/node_modules/claude-flow/node_modules/agentdb/dist/src/services/SonaTrajectoryService.js"
+  local SHARED="$HOME/.octoally/ruflo/node_modules/claude-flow/node_modules/agentdb/dist/src/services/SonaTrajectoryService.js"
   [ -f "$SHARED" ] && TARGETS+=("$SHARED")
 
   if [ ${#TARGETS[@]} -eq 0 ]; then
@@ -327,7 +327,7 @@ patch_sona_service() {
 # Part 3: Ensure better-sqlite3 is available
 # =============================================================================
 ensure_better_sqlite3() {
-  local SHARED_RUFLO="$HOME/.hivecommand/ruflo"
+  local SHARED_RUFLO="$HOME/.octoally/ruflo"
 
   # Check if already natively installed in the project
   if [ -d "$PROJECT_PATH/node_modules/better-sqlite3" ] && [ ! -L "$PROJECT_PATH/node_modules/better-sqlite3" ]; then

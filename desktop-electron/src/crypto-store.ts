@@ -2,7 +2,7 @@
  * Encrypt-at-rest for sensitive config values (API keys).
  *
  * Uses AES-256-GCM with a key derived from a random salt (stored in
- * ~/.hivecommand/.keyfile) + machine-specific context via PBKDF2.
+ * ~/.octoally/.keyfile) + machine-specific context via PBKDF2.
  *
  * Encrypted values are stored as "enc:<base64>" strings.
  * Plaintext values (legacy) are detected and re-encrypted on next save.
@@ -31,15 +31,21 @@ function machineContext(): string {
   const userInfo = os.userInfo();
   // uid is numeric on Linux/macOS, username as fallback
   const userId = userInfo.uid !== -1 ? String(userInfo.uid) : userInfo.username;
-  return `hivecommand:${hostname}:${userId}`;
+  return `octoally:${hostname}:${userId}`;
 }
 
 // ---------------------------------------------------------------------------
-// Salt management — random 32-byte salt stored in ~/.hivecommand/.keyfile
+// Salt management — random 32-byte salt stored in ~/.octoally/.keyfile
 // ---------------------------------------------------------------------------
 
 function keyfilePath(): string {
-  return path.join(os.homedir(), '.hivecommand', '.keyfile');
+  // Prefer new path; fall back to legacy path for migration
+  const newPath = path.join(os.homedir(), '.octoally', '.keyfile');
+  const legacyPath = path.join(os.homedir(), '.hivecommand', '.keyfile');
+  if (!fs.existsSync(newPath) && fs.existsSync(legacyPath)) {
+    return legacyPath;
+  }
+  return newPath;
 }
 
 function getSalt(): Buffer {

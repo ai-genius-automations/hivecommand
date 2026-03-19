@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HiveCommand Installer
+# OctoAlly Installer
 # Downloads a pre-built release, extracts it, and starts the server.
 #
 # Prerequisites:
@@ -7,22 +7,22 @@
 #   - Claude Code     npm install -g @anthropic-ai/claude-code
 #
 # IMPORTANT: You must run `claude` at least once and accept the terms before
-# installing HiveCommand. Sessions require non-interactive mode, so you must also
+# installing OctoAlly. Sessions require non-interactive mode, so you must also
 # run: claude --dangerously-skip-permissions
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ai-genius-automations/hivecommand/main/scripts/install.sh | bash
-#   HIVECOMMAND_VERSION=0.1.0 bash install.sh
-#   HIVECOMMAND_INSTALL_DIR=/opt/hivecommand bash install.sh
+#   curl -fsSL https://raw.githubusercontent.com/ai-genius-automations/octoally/main/scripts/install.sh | bash
+#   OCTOALLY_VERSION=0.1.0 bash install.sh
+#   OCTOALLY_INSTALL_DIR=/opt/octoally bash install.sh
 #
 # For private repos / pre-release testing:
-#   HIVECOMMAND_ARCHIVE_URL="https://example.com/hivecommand-v0.1.0.tar.gz" bash install.sh
+#   OCTOALLY_ARCHIVE_URL="https://example.com/octoally-v0.1.0.tar.gz" bash install.sh
 
 set -euo pipefail
 
-INSTALL_DIR="${HIVECOMMAND_INSTALL_DIR:-$HOME/hivecommand}"
-GITHUB_REPO="${HIVECOMMAND_GITHUB_REPO:-ai-genius-automations/hivecommand}"
-VERSION="${HIVECOMMAND_VERSION:-latest}"
+INSTALL_DIR="${OCTOALLY_INSTALL_DIR:-${HIVECOMMAND_INSTALL_DIR:-$HOME/octoally}}"
+GITHUB_REPO="${OCTOALLY_GITHUB_REPO:-ai-genius-automations/octoally}"
+VERSION="${OCTOALLY_VERSION:-latest}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 # Build auth header array for curl (used for private repo access)
@@ -39,10 +39,10 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-log_info()  { echo -e "${CYAN}[HiveCommand]${NC} $1"; }
-log_ok()    { echo -e "${GREEN}[HiveCommand]${NC} $1"; }
-log_warn()  { echo -e "${YELLOW}[HiveCommand]${NC} $1"; }
-log_error() { echo -e "${RED}[HiveCommand]${NC} $1"; }
+log_info()  { echo -e "${CYAN}[OctoAlly]${NC} $1"; }
+log_ok()    { echo -e "${GREEN}[OctoAlly]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[OctoAlly]${NC} $1"; }
+log_error() { echo -e "${RED}[OctoAlly]${NC} $1"; }
 log_step()  { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 TOTAL_STEPS=6
@@ -51,7 +51,7 @@ TOTAL_STEPS=6
 if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
   TARGET_USER="$SUDO_USER"
   TARGET_HOME=$(eval echo "~$SUDO_USER")
-  INSTALL_DIR="${HIVECOMMAND_INSTALL_DIR:-$TARGET_HOME/hivecommand}"
+  INSTALL_DIR="${OCTOALLY_INSTALL_DIR:-${HIVECOMMAND_INSTALL_DIR:-$TARGET_HOME/octoally}}"
 elif [ "$(id -u)" -eq 0 ]; then
   TARGET_USER="root"
   TARGET_HOME="$HOME"
@@ -163,7 +163,7 @@ if ! command -v claude &>/dev/null; then
 fi
 
 # Check if Claude Code has been run with --dangerously-skip-permissions
-# This is required for HiveCommand to run non-interactive agent sessions.
+# This is required for OctoAlly to run non-interactive agent sessions.
 # The flag creates a config entry that persists — only needs to be run once.
 CLAUDE_CONFIG_DIR="${HOME}/.claude"
 if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
@@ -181,7 +181,7 @@ fi
 if [ "$CLAUDE_INITIALIZED" = false ]; then
   log_warn "Claude Code has not been initialized yet."
   echo ""
-  echo "  HiveCommand requires Claude Code to be set up with non-interactive permissions."
+  echo "  OctoAlly requires Claude Code to be set up with non-interactive permissions."
   echo "  You need to run these commands (as your user, not root):"
   echo ""
   echo "    1. claude                              # Accept terms & sign in"
@@ -242,21 +242,38 @@ NODE_VER="$(node -v 2>/dev/null || echo 'not found')"
 CLAUDE_VER="$(claude --version 2>/dev/null || echo 'ok')"
 log_ok "Prerequisites met (Node ${NODE_VER}, Claude Code ${CLAUDE_VER})"
 
-# --- Migrate from OpenFlow (if upgrading) ------------------------------------
+# --- Migrate from OpenFlow and HiveCommand (if upgrading) ---------------------
 
-OLD_CONFIG_DIR="$TARGET_HOME/.openflow"
-NEW_CONFIG_DIR="$TARGET_HOME/.hivecommand"
+NEW_CONFIG_DIR="$TARGET_HOME/.octoally"
 
-if [ -d "$OLD_CONFIG_DIR" ] && [ ! -d "$NEW_CONFIG_DIR" ]; then
-  log_info "Migrating config directory: ~/.openflow → ~/.hivecommand"
-  mv "$OLD_CONFIG_DIR" "$NEW_CONFIG_DIR"
+# Migrate from OpenFlow
+OLD_OPENFLOW_DIR="$TARGET_HOME/.openflow"
+if [ -d "$OLD_OPENFLOW_DIR" ] && [ ! -d "$NEW_CONFIG_DIR" ]; then
+  log_info "Migrating config directory: ~/.openflow → ~/.octoally"
+  mv "$OLD_OPENFLOW_DIR" "$NEW_CONFIG_DIR"
 fi
 
-if [ -d "$NEW_CONFIG_DIR" ] && [ -f "$NEW_CONFIG_DIR/openflow.db" ] && [ ! -f "$NEW_CONFIG_DIR/hivecommand.db" ]; then
-  log_info "Migrating database: openflow.db → hivecommand.db"
-  mv "$NEW_CONFIG_DIR/openflow.db" "$NEW_CONFIG_DIR/hivecommand.db"
-  [ -f "$NEW_CONFIG_DIR/openflow.db-wal" ] && mv "$NEW_CONFIG_DIR/openflow.db-wal" "$NEW_CONFIG_DIR/hivecommand.db-wal"
-  [ -f "$NEW_CONFIG_DIR/openflow.db-shm" ] && mv "$NEW_CONFIG_DIR/openflow.db-shm" "$NEW_CONFIG_DIR/hivecommand.db-shm"
+# Migrate from HiveCommand
+OLD_HIVECOMMAND_DIR="$TARGET_HOME/.hivecommand"
+if [ -d "$OLD_HIVECOMMAND_DIR" ] && [ ! -d "$NEW_CONFIG_DIR" ]; then
+  log_info "Migrating config directory: ~/.hivecommand → ~/.octoally"
+  mv "$OLD_HIVECOMMAND_DIR" "$NEW_CONFIG_DIR"
+fi
+
+# Migrate database: openflow.db → octoally.db
+if [ -d "$NEW_CONFIG_DIR" ] && [ -f "$NEW_CONFIG_DIR/openflow.db" ] && [ ! -f "$NEW_CONFIG_DIR/octoally.db" ]; then
+  log_info "Migrating database: openflow.db → octoally.db"
+  mv "$NEW_CONFIG_DIR/openflow.db" "$NEW_CONFIG_DIR/octoally.db"
+  [ -f "$NEW_CONFIG_DIR/openflow.db-wal" ] && mv "$NEW_CONFIG_DIR/openflow.db-wal" "$NEW_CONFIG_DIR/octoally.db-wal"
+  [ -f "$NEW_CONFIG_DIR/openflow.db-shm" ] && mv "$NEW_CONFIG_DIR/openflow.db-shm" "$NEW_CONFIG_DIR/octoally.db-shm"
+fi
+
+# Migrate database: hivecommand.db → octoally.db
+if [ -d "$NEW_CONFIG_DIR" ] && [ -f "$NEW_CONFIG_DIR/hivecommand.db" ] && [ ! -f "$NEW_CONFIG_DIR/octoally.db" ]; then
+  log_info "Migrating database: hivecommand.db → octoally.db"
+  mv "$NEW_CONFIG_DIR/hivecommand.db" "$NEW_CONFIG_DIR/octoally.db"
+  [ -f "$NEW_CONFIG_DIR/hivecommand.db-wal" ] && mv "$NEW_CONFIG_DIR/hivecommand.db-wal" "$NEW_CONFIG_DIR/octoally.db-wal"
+  [ -f "$NEW_CONFIG_DIR/hivecommand.db-shm" ] && mv "$NEW_CONFIG_DIR/hivecommand.db-shm" "$NEW_CONFIG_DIR/octoally.db-shm"
 fi
 
 # Remove old OpenFlow binaries and service files
@@ -281,11 +298,33 @@ if launchctl list com.aigenius.openflow &>/dev/null 2>&1; then
   rm -f "$TARGET_HOME/Library/LaunchAgents/com.aigenius.openflow.plist"
 fi
 
+# Remove old HiveCommand binaries and service files
+if [ -L "/usr/local/bin/hivecommand" ] || [ -f "/usr/local/bin/hivecommand" ]; then
+  log_info "Removing old CLI: /usr/local/bin/hivecommand"
+  $SUDO rm -f "/usr/local/bin/hivecommand"
+fi
+if [ -L "$TARGET_HOME/.local/bin/hivecommand" ] || [ -f "$TARGET_HOME/.local/bin/hivecommand" ]; then
+  rm -f "$TARGET_HOME/.local/bin/hivecommand"
+fi
+if [ -f "/etc/systemd/system/hivecommand.service" ]; then
+  log_info "Removing old systemd service: hivecommand.service"
+  $SUDO systemctl stop hivecommand 2>/dev/null || true
+  $SUDO systemctl disable hivecommand 2>/dev/null || true
+  $SUDO rm -f "/etc/systemd/system/hivecommand.service"
+  $SUDO systemctl daemon-reload 2>/dev/null || true
+fi
+if launchctl list com.aigenius.hivecommand &>/dev/null 2>&1; then
+  log_info "Removing old launchd service: com.aigenius.hivecommand"
+  launchctl stop com.aigenius.hivecommand 2>/dev/null || true
+  launchctl unload "$TARGET_HOME/Library/LaunchAgents/com.aigenius.hivecommand.plist" 2>/dev/null || true
+  rm -f "$TARGET_HOME/Library/LaunchAgents/com.aigenius.hivecommand.plist"
+fi
+
 # --- Step 2: Download release ------------------------------------------------
 
-log_step 2 "Downloading HiveCommand..."
+log_step 2 "Downloading OctoAlly..."
 
-ARCHIVE_URL="${HIVECOMMAND_ARCHIVE_URL:-}"
+ARCHIVE_URL="${OCTOALLY_ARCHIVE_URL:-${HIVECOMMAND_ARCHIVE_URL:-}}"
 
 if [ -z "$ARCHIVE_URL" ]; then
   # Resolve version from GitHub Releases API
@@ -299,7 +338,7 @@ if [ -z "$ARCHIVE_URL" ]; then
         })' 2>/dev/null || echo "")
     fi
     if [ -z "$RELEASE_INFO" ]; then
-      log_error "No releases found. Set HIVECOMMAND_ARCHIVE_URL to install from a direct URL."
+      log_error "No releases found. Set OCTOALLY_ARCHIVE_URL to install from a direct URL."
       exit 1
     fi
     VERSION=$(echo "$RELEASE_INFO" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).tag_name.replace(/^v/,""))}catch{process.exit(1)}})' 2>/dev/null)
@@ -319,7 +358,7 @@ if [ -z "$ARCHIVE_URL" ]; then
   fi
 
   if [ -z "$ARCHIVE_URL" ]; then
-    ARCHIVE_URL="https://github.com/$GITHUB_REPO/releases/download/v${VERSION}/hivecommand-v${VERSION}.tar.gz"
+    ARCHIVE_URL="https://github.com/$GITHUB_REPO/releases/download/v${VERSION}/octoally-v${VERSION}.tar.gz"
   fi
 fi
 
@@ -338,8 +377,8 @@ log_ok "Downloaded ($(du -h "$TMPFILE" | cut -f1))"
 log_step 3 "Installing to $INSTALL_DIR..."
 
 # Stop existing server if running — try PID file first, then CLI, then pkill
-if [ -f "$INSTALL_DIR/.hivecommand.pid" ]; then
-  local_pid=$(cat "$INSTALL_DIR/.hivecommand.pid" 2>/dev/null || echo "")
+if [ -f "$INSTALL_DIR/.octoally.pid" ]; then
+  local_pid=$(cat "$INSTALL_DIR/.octoally.pid" 2>/dev/null || echo "")
   if [ -n "$local_pid" ] && kill -0 "$local_pid" 2>/dev/null; then
     log_info "Stopping existing server (PID $local_pid)..."
     kill "$local_pid" 2>/dev/null || true
@@ -349,8 +388,8 @@ if [ -f "$INSTALL_DIR/.hivecommand.pid" ]; then
   fi
 fi
 # Fallback: use CLI stop if available
-if command -v hivecommand &>/dev/null; then
-  hivecommand stop 2>/dev/null || true
+if command -v octoally &>/dev/null; then
+  octoally stop 2>/dev/null || true
 fi
 # Fallback: kill any remaining server process on our port
 if command -v fuser &>/dev/null; then
@@ -359,10 +398,10 @@ fi
 
 # Kill running desktop app — SIGTERM first, then SIGKILL after 1s.
 # Electron hangs on close when the server is dead (webview stuck reconnecting).
-if pkill -f "hivecommand-desktop" 2>/dev/null; then
+if pkill -f "octoally-desktop" 2>/dev/null; then
   log_info "Stopping desktop app..."
   sleep 1
-  pkill -9 -f "hivecommand-desktop" 2>/dev/null || true
+  pkill -9 -f "octoally-desktop" 2>/dev/null || true
 fi
 
 # Extract
@@ -370,16 +409,16 @@ EXTRACT_DIR=$(mktemp -d)
 tar xzf "$TMPFILE" -C "$EXTRACT_DIR"
 rm -f "$TMPFILE"
 
-EXTRACTED=$(ls -d "$EXTRACT_DIR"/hivecommand-* 2>/dev/null | head -1)
+EXTRACTED=$(ls -d "$EXTRACT_DIR"/octoally-* 2>/dev/null | head -1)
 if [ -z "$EXTRACTED" ] || [ ! -d "$EXTRACTED" ]; then
-  log_error "Archive does not contain expected hivecommand-vX.Y.Z directory"
+  log_error "Archive does not contain expected octoally-vX.Y.Z directory"
   rm -rf "$EXTRACT_DIR"
   exit 1
 fi
 
 # Preserve user data from existing install
 if [ -d "$INSTALL_DIR" ]; then
-  for keep in logs .hivecommand .hivecommand.pid; do
+  for keep in logs .octoally .octoally.pid; do
     [ -e "$INSTALL_DIR/$keep" ] && cp -r "$INSTALL_DIR/$keep" "$EXTRACT_DIR/_keep_$keep" 2>/dev/null || true
   done
   rm -rf "$INSTALL_DIR"
@@ -387,7 +426,7 @@ fi
 
 mv "$EXTRACTED" "$INSTALL_DIR"
 
-for keep in logs .hivecommand .hivecommand.pid; do
+for keep in logs .octoally .octoally.pid; do
   [ -e "$EXTRACT_DIR/_keep_$keep" ] && mv "$EXTRACT_DIR/_keep_$keep" "$INSTALL_DIR/$keep" 2>/dev/null || true
 done
 rm -rf "$EXTRACT_DIR"
@@ -409,24 +448,24 @@ if ! npm install --omit=dev --prefix "$INSTALL_DIR/server" 2>&1; then
   exit 1
 fi
 
-log_ok "HiveCommand v${VERSION} installed to $INSTALL_DIR"
+log_ok "OctoAlly v${VERSION} installed to $INSTALL_DIR"
 
 # --- Step 4: Install CLI -----------------------------------------------------
 
 log_step 4 "Installing CLI..."
 
-chmod +x "$INSTALL_DIR/bin/hivecommand"
+chmod +x "$INSTALL_DIR/bin/octoally"
 
 LINK_DIR="/usr/local/bin"
 if [ ! -w "$LINK_DIR" ]; then
   # Try with sudo
-  if $SUDO ln -sf "$INSTALL_DIR/bin/hivecommand" "$LINK_DIR/hivecommand" 2>/dev/null; then
+  if $SUDO ln -sf "$INSTALL_DIR/bin/octoally" "$LINK_DIR/octoally" 2>/dev/null; then
     : # success — symlinked to /usr/local/bin
   else
     # Fallback to ~/.local/bin and ensure it's in PATH
     LINK_DIR="$TARGET_HOME/.local/bin"
     mkdir -p "$LINK_DIR"
-    ln -sf "$INSTALL_DIR/bin/hivecommand" "$LINK_DIR/hivecommand"
+    ln -sf "$INSTALL_DIR/bin/octoally" "$LINK_DIR/octoally"
 
     # Add to PATH if not already there
     if ! echo "$PATH" | tr ':' '\n' | grep -qx "$LINK_DIR"; then
@@ -448,7 +487,7 @@ if [ ! -w "$LINK_DIR" ]; then
     fi
   fi
 else
-  ln -sf "$INSTALL_DIR/bin/hivecommand" "$LINK_DIR/hivecommand"
+  ln -sf "$INSTALL_DIR/bin/octoally" "$LINK_DIR/octoally"
 fi
 
 # Fix ownership if running as root for another user
@@ -457,11 +496,11 @@ if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
   chown -R "$TARGET_USER:$TARGET_USER" "$INSTALL_DIR"
 fi
 
-log_ok "CLI: $LINK_DIR/hivecommand"
+log_ok "CLI: $LINK_DIR/octoally"
 
 # --- Step 5: Start server ----------------------------------------------------
 
-log_step 5 "Starting HiveCommand..."
+log_step 5 "Starting OctoAlly..."
 
 # Remove legacy Tauri desktop app if installed
 if command -v dpkg &>/dev/null && dpkg -l open-flow &>/dev/null 2>&1; then
@@ -477,22 +516,22 @@ fi
 
 # Start (as target user if we're root)
 if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
-  su - "$TARGET_USER" -c "PATH=\"$LINK_DIR:\$PATH\" hivecommand start"
+  su - "$TARGET_USER" -c "PATH=\"$LINK_DIR:\$PATH\" octoally start"
 else
-  "$LINK_DIR/hivecommand" start
+  "$LINK_DIR/octoally" start
 fi
 
-# --- Step 5b: Install hivecommand shell function ----------------------------
+# --- Step 5b: Install octoally shell function ----------------------------
 
 # Shell function for launching hivemind sessions from the terminal with:
 # - dtach persistence (session survives terminal close)
 # - Process cleanup on exit (kills spawned daemons)
-# - Sidecar files for HiveCommand dashboard adoption
+# - Sidecar files for OctoAlly dashboard adoption
 # Works in bash and zsh, on Linux and macOS.
 
-HIVECOMMAND_FUNC_MARKER="# HiveCommand hivemind launcher function"
-HIVECOMMAND_FUNC_END="# end-hivecommand-hivemind"
-HIVECOMMAND_FUNC_BODY='hivecommand() {
+OCTOALLY_FUNC_MARKER="# OctoAlly hivemind launcher function"
+OCTOALLY_FUNC_END="# end-octoally-hivemind"
+OCTOALLY_FUNC_BODY='octoally() {
   local DEFAULT_PROMPT="start up and then ask me what I want you to do. DO NOT DO ANYTHING ELSE, NO TASKS! Just initialize and then prompt me"
   local prompt="${*:-$DEFAULT_PROMPT}"
 
@@ -501,13 +540,16 @@ HIVECOMMAND_FUNC_BODY='hivecommand() {
   fi
 
   # Resolve ruflo-run.sh (shared cache or npx fallback)
-  local RUFLO_RUN="$HOME/.hivecommand/ruflo-run.sh"
+  local RUFLO_RUN="$HOME/.octoally/ruflo-run.sh"
+  if [ ! -f "$RUFLO_RUN" ]; then
+    RUFLO_RUN="$HOME/.hivecommand/ruflo-run.sh"
+  fi
   if [ ! -f "$RUFLO_RUN" ]; then
     echo "ruflo-run.sh not found. Using npx (slower)."
     RUFLO_RUN=""
   fi
 
-  _hc_run_ruflo() {
+  _oa_run_ruflo() {
     if [ -n "$RUFLO_RUN" ]; then
       bash "$RUFLO_RUN" "$@"
     else
@@ -519,10 +561,10 @@ HIVECOMMAND_FUNC_BODY='hivecommand() {
   if ! command -v dtach &>/dev/null; then
     echo "dtach not found, running without session persistence."
     local before=$(pgrep -f "cli.js daemon" 2>/dev/null | sort)
-    local _hc_cleaned=0
-    _hc_cleanup() {
-      [ "$_hc_cleaned" = "1" ] && return
-      _hc_cleaned=1
+    local _oa_cleaned=0
+    _oa_cleanup() {
+      [ "$_oa_cleaned" = "1" ] && return
+      _oa_cleaned=1
       echo ""
       echo "Cleaning up hive-mind processes..."
       local after=$(pgrep -f "cli.js daemon" 2>/dev/null | sort)
@@ -537,9 +579,9 @@ HIVECOMMAND_FUNC_BODY='hivecommand() {
       done
       trap - EXIT INT TERM HUP
     }
-    trap _hc_cleanup EXIT INT TERM HUP
-    _hc_run_ruflo hive-mind spawn "$prompt" --claude
-    _hc_cleanup
+    trap _oa_cleanup EXIT INT TERM HUP
+    _oa_run_ruflo hive-mind spawn "$prompt" --claude
+    _oa_cleanup
     return
   fi
 
@@ -547,7 +589,7 @@ HIVECOMMAND_FUNC_BODY='hivecommand() {
   local sid="$(date +%s)-$$"
   local sock="/tmp/hivemind-${sid}.sock"
 
-  # Write sidecar files for HiveCommand dashboard discovery/adoption
+  # Write sidecar files for OctoAlly dashboard discovery/adoption
   printf '\''%s\n'\'' "$(pwd)" > "/tmp/hivemind-${sid}.info"
   printf '\''%s\n'\'' "$(date -Iseconds)" >> "/tmp/hivemind-${sid}.info"
   printf '\''%s'\'' "$prompt" > "/tmp/hivemind-${sid}.prompt"
@@ -579,7 +621,10 @@ _cleanup() {
 }
 trap _cleanup EXIT INT TERM
 
-RUFLO_RUN="$HOME/.hivecommand/ruflo-run.sh"
+RUFLO_RUN="$HOME/.octoally/ruflo-run.sh"
+if [ ! -f "$RUFLO_RUN" ]; then
+  RUFLO_RUN="$HOME/.hivecommand/ruflo-run.sh"
+fi
 if [ -f "$RUFLO_RUN" ]; then
   bash "$RUFLO_RUN" hive-mind spawn "$PROMPT" --claude
 else
@@ -599,9 +644,9 @@ RUNEOF
     echo ""
     echo "Session detached — still running in background."
     echo "Reattach: dtach -a $sock -Ez"
-    echo "Or adopt in HiveCommand dashboard."
+    echo "Or adopt in OctoAlly dashboard."
   fi
-} '"$HIVECOMMAND_FUNC_END"
+} '"$OCTOALLY_FUNC_END"
 
 # Cross-platform sed -i (BSD sed on macOS requires -i '', GNU sed does not)
 _sed_i() {
@@ -612,34 +657,49 @@ _sed_i() {
   fi
 }
 
+# Legacy markers for cleanup
+LEGACY_FUNC_MARKER="# HiveCommand hivemind launcher function"
+LEGACY_FUNC_END="# end-hivecommand-hivemind"
+
 _install_shell_func() {
   local RC_FILE="$1"
   [ ! -f "$RC_FILE" ] && return
 
-  # Remove old version if exists (uses end-marker for safe removal)
-  if grep -q "$HIVECOMMAND_FUNC_MARKER" "$RC_FILE" 2>/dev/null; then
-    if grep -q "$HIVECOMMAND_FUNC_END" "$RC_FILE" 2>/dev/null; then
-      _sed_i "/$HIVECOMMAND_FUNC_MARKER/,/$HIVECOMMAND_FUNC_END/d" "$RC_FILE"
+  # Remove legacy HiveCommand version if exists
+  if grep -q "$LEGACY_FUNC_MARKER" "$RC_FILE" 2>/dev/null; then
+    if grep -q "$LEGACY_FUNC_END" "$RC_FILE" 2>/dev/null; then
+      _sed_i "/$LEGACY_FUNC_MARKER/,/$LEGACY_FUNC_END/d" "$RC_FILE"
     else
-      # Fallback: remove from marker to closing brace on its own line
-      _sed_i "/$HIVECOMMAND_FUNC_MARKER/,/^}/d" "$RC_FILE"
+      _sed_i "/$LEGACY_FUNC_MARKER/,/^}/d" "$RC_FILE"
+    fi
+  fi
+  # Self-heal legacy orphaned tails
+  if grep -q "$LEGACY_FUNC_END" "$RC_FILE" 2>/dev/null && \
+     ! grep -q "$LEGACY_FUNC_MARKER" "$RC_FILE" 2>/dev/null; then
+    _sed_i "/^trap _cleanup EXIT INT TERM/,/$LEGACY_FUNC_END/d" "$RC_FILE"
+    _sed_i '/^$/N;/^\n$/N;/^\n\n$/N;/^\n\n\n$/d' "$RC_FILE"
+  fi
+
+  # Remove old OctoAlly version if exists (uses end-marker for safe removal)
+  if grep -q "$OCTOALLY_FUNC_MARKER" "$RC_FILE" 2>/dev/null; then
+    if grep -q "$OCTOALLY_FUNC_END" "$RC_FILE" 2>/dev/null; then
+      _sed_i "/$OCTOALLY_FUNC_MARKER/,/$OCTOALLY_FUNC_END/d" "$RC_FILE"
+    else
+      _sed_i "/$OCTOALLY_FUNC_MARKER/,/^}/d" "$RC_FILE"
     fi
   fi
 
   # Self-heal: remove orphaned tails left by buggy earlier installers
-  # The end marker without a matching start marker means partial removal occurred
-  if grep -q "$HIVECOMMAND_FUNC_END" "$RC_FILE" 2>/dev/null && \
-     ! grep -q "$HIVECOMMAND_FUNC_MARKER" "$RC_FILE" 2>/dev/null; then
-    # Find and remove everything from the orphaned heredoc body to the end marker
-    _sed_i "/^trap _cleanup EXIT INT TERM/,/$HIVECOMMAND_FUNC_END/d" "$RC_FILE"
-    # Clean up any remaining blank lines left behind (collapse runs of >3 blanks)
+  if grep -q "$OCTOALLY_FUNC_END" "$RC_FILE" 2>/dev/null && \
+     ! grep -q "$OCTOALLY_FUNC_MARKER" "$RC_FILE" 2>/dev/null; then
+    _sed_i "/^trap _cleanup EXIT INT TERM/,/$OCTOALLY_FUNC_END/d" "$RC_FILE"
     _sed_i '/^$/N;/^\n$/N;/^\n\n$/N;/^\n\n\n$/d' "$RC_FILE"
   fi
 
   echo "" >> "$RC_FILE"
-  echo "$HIVECOMMAND_FUNC_MARKER" >> "$RC_FILE"
-  echo "$HIVECOMMAND_FUNC_BODY" >> "$RC_FILE"
-  log_ok "Installed hivecommand() shell function in $(basename "$RC_FILE")"
+  echo "$OCTOALLY_FUNC_MARKER" >> "$RC_FILE"
+  echo "$OCTOALLY_FUNC_BODY" >> "$RC_FILE"
+  log_ok "Installed octoally() shell function in $(basename "$RC_FILE")"
 }
 
 _install_shell_func "$TARGET_HOME/.bashrc"
@@ -650,20 +710,20 @@ _install_shell_func "$TARGET_HOME/.zshrc"
 log_step 6 "Desktop app..."
 
 # Determine what desktop file we'd look for on this OS
-DESKTOP_URL="${HIVECOMMAND_DESKTOP_URL:-}"
+DESKTOP_URL="${OCTOALLY_DESKTOP_URL:-${HIVECOMMAND_DESKTOP_URL:-}}"
 DESKTOP_FILE=""
 DESKTOP_SUPPORTED=true
 
 case "$OS" in
   Linux*)
-    DESKTOP_FILE="hivecommand-desktop_${VERSION}_amd64.deb"
+    DESKTOP_FILE="octoally-desktop_${VERSION}_amd64.deb"
     ;;
   Darwin*)
     ARCH="$(uname -m)"
     if [ "$ARCH" = "arm64" ]; then
-      DESKTOP_FILE="HiveCommand-${VERSION}-arm64.dmg"
+      DESKTOP_FILE="OctoAlly-${VERSION}-arm64.dmg"
     else
-      DESKTOP_FILE="HiveCommand-${VERSION}.dmg"
+      DESKTOP_FILE="OctoAlly-${VERSION}.dmg"
     fi
     ;;
   *)
@@ -724,9 +784,9 @@ install_desktop_app() {
   # Kill any running desktop app before installing — dpkg replaces the binary
   # while the old process is still running, causing crashes and tray conflicts.
   # SIGTERM then SIGKILL — Electron hangs on close when server is dead.
-  pkill -f "hivecommand-desktop" 2>/dev/null || true
+  pkill -f "octoally-desktop" 2>/dev/null || true
   sleep 1
-  pkill -9 -f "hivecommand-desktop" 2>/dev/null || true
+  pkill -9 -f "octoally-desktop" 2>/dev/null || true
   sleep 1  # wait for process to fully exit and release tray
 
   case "$OS" in
@@ -734,25 +794,27 @@ install_desktop_app() {
       log_info "Installing desktop app (.deb)..."
       $SUDO dpkg -i "$TMPDESKTOP" 2>&1 || $SUDO apt-get install -f -y -qq 2>&1
       rm -f "$TMPDESKTOP"
-      log_ok "Desktop app installed (launch from app menu or run: hivecommand-desktop)"
+      log_ok "Desktop app installed (launch from app menu or run: octoally-desktop)"
 
       # Configure espanso text expander if installed — xterm.js in Electron needs
       # clipboard backend instead of inject mode for text expansion to work
       ESPANSO_CONFIG_DIR="${TARGET_HOME}/.config/espanso/config"
-      if [ -d "$ESPANSO_CONFIG_DIR" ] && [ ! -f "$ESPANSO_CONFIG_DIR/hivecommand.yml" ]; then
-        cat > "$ESPANSO_CONFIG_DIR/hivecommand.yml" << 'ESPANSO_EOF'
-# HiveCommand: force clipboard backend for text expansion in xterm.js/Electron
-filter_class: hivecommand-desktop
+      if [ -d "$ESPANSO_CONFIG_DIR" ] && [ ! -f "$ESPANSO_CONFIG_DIR/octoally.yml" ]; then
+        cat > "$ESPANSO_CONFIG_DIR/octoally.yml" << 'ESPANSO_EOF'
+# OctoAlly: force clipboard backend for text expansion in xterm.js/Electron
+filter_class: octoally-desktop
 backend: Clipboard
 fast_inject: false
 paste_shortcut: CTRL+SHIFT+V
 apply_patch: false
 ESPANSO_EOF
         if [ -n "${SUDO_USER:-}" ]; then
-          chown "$TARGET_USER:$TARGET_USER" "$ESPANSO_CONFIG_DIR/hivecommand.yml"
+          chown "$TARGET_USER:$TARGET_USER" "$ESPANSO_CONFIG_DIR/octoally.yml"
         fi
-        log_ok "Configured espanso text expander for HiveCommand"
+        log_ok "Configured espanso text expander for OctoAlly"
       fi
+      # Remove old espanso config if present
+      [ -f "$ESPANSO_CONFIG_DIR/hivecommand.yml" ] && rm -f "$ESPANSO_CONFIG_DIR/hivecommand.yml"
       ;;
     Darwin*)
       log_info "Mounting DMG..."
@@ -792,11 +854,11 @@ ESPANSO_EOF
 DESKTOP_ALREADY_INSTALLED=false
 case "$OS" in
   Linux*)
-    command -v hivecommand-desktop &>/dev/null && DESKTOP_ALREADY_INSTALLED=true
-    dpkg -l hivecommand-desktop &>/dev/null 2>&1 && DESKTOP_ALREADY_INSTALLED=true
+    command -v octoally-desktop &>/dev/null && DESKTOP_ALREADY_INSTALLED=true
+    dpkg -l octoally-desktop &>/dev/null 2>&1 && DESKTOP_ALREADY_INSTALLED=true
     ;;
   Darwin*)
-    [ -d "/Applications/HiveCommand.app" ] && DESKTOP_ALREADY_INSTALLED=true
+    [ -d "/Applications/OctoAlly.app" ] && DESKTOP_ALREADY_INSTALLED=true
     ;;
 esac
 
@@ -810,12 +872,12 @@ elif [ "$DESKTOP_ALREADY_INSTALLED" = true ]; then
   log_info "Updating desktop app..."
   install_desktop_app
   DESKTOP_INSTALLED_NOW=true
-elif [ "${HIVECOMMAND_NONINTERACTIVE:-}" = "1" ]; then
+elif [ "${OCTOALLY_NONINTERACTIVE:-${HIVECOMMAND_NONINTERACTIVE:-}}" = "1" ]; then
   log_info "Desktop app available — skipping in non-interactive mode"
 elif [ -e /dev/tty ]; then
   # Interactive — prompt (works even when piped: curl | bash)
   echo ""
-  echo -n "Install the HiveCommand desktop app? [y/N]: "
+  echo -n "Install the OctoAlly desktop app? [y/N]: "
   read -r answer < /dev/tty 2>/dev/null || answer="n"
   case "$answer" in
     [yY]|[yY][eE][sS])
@@ -834,38 +896,38 @@ fi
 
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}${BOLD}  HiveCommand v${VERSION} installed successfully!${NC}"
+echo -e "${GREEN}${BOLD}  OctoAlly v${VERSION} installed successfully!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "  ${BOLD}Dashboard${NC}   http://localhost:42010"
-echo -e "  ${BOLD}CLI${NC}         $LINK_DIR/hivecommand"
+echo -e "  ${BOLD}CLI${NC}         $LINK_DIR/octoally"
 echo -e "  ${BOLD}Install${NC}     $INSTALL_DIR"
 if [ "$DESKTOP_INSTALLED_NOW" = true ]; then
   echo -e "  ${BOLD}Desktop${NC}     Installed"
 fi
 echo ""
 echo -e "  ${BOLD}Commands:${NC}"
-echo "    hivecommand                   Launch hivemind session"
-echo "    hivecommand status            Check status"
-echo "    hivecommand stop / start      Stop or start the server"
-echo "    hivecommand update            Update to latest release"
-echo "    hivecommand install-service   Auto-start on boot"
+echo "    octoally                   Launch hivemind session"
+echo "    octoally status            Check status"
+echo "    octoally stop / start      Stop or start the server"
+echo "    octoally update            Update to latest release"
+echo "    octoally install-service   Auto-start on boot"
 echo ""
 
 # Auto-launch desktop app if it was just installed/updated
 if [ "$DESKTOP_INSTALLED_NOW" = true ]; then
-  if [ "${HIVECOMMAND_NONINTERACTIVE:-}" = "1" ]; then
+  if [ "${OCTOALLY_NONINTERACTIVE:-${HIVECOMMAND_NONINTERACTIVE:-}}" = "1" ]; then
     # Non-interactive (dashboard-triggered update) — launch immediately
     case "$OS" in
-      Linux*)  nohup hivecommand-desktop &>/dev/null & disown ;;
-      Darwin*) open -a HiveCommand ;;
+      Linux*)  nohup octoally-desktop &>/dev/null & disown ;;
+      Darwin*) open -a OctoAlly ;;
     esac
   elif [ -e /dev/tty ]; then
-    echo -e "  Press ${BOLD}Enter${NC} to launch HiveCommand, or ${BOLD}Ctrl+C${NC} to exit."
+    echo -e "  Press ${BOLD}Enter${NC} to launch OctoAlly, or ${BOLD}Ctrl+C${NC} to exit."
     read -r < /dev/tty 2>/dev/null || true
     case "$OS" in
-      Linux*)  nohup hivecommand-desktop &>/dev/null & disown ;;
-      Darwin*) open -a HiveCommand ;;
+      Linux*)  nohup octoally-desktop &>/dev/null & disown ;;
+      Darwin*) open -a OctoAlly ;;
     esac
   fi
 fi

@@ -1,11 +1,11 @@
 [Unit]
-Description=HiveCommand Orchestration Dashboard
+Description=OctoAlly Orchestration Dashboard
 After=network.target
 
 [Service]
 Type=simple
 User=__USER__
-WorkingDirectory=__HIVECOMMAND_DIR__/server
+WorkingDirectory=__OCTOALLY_DIR__/server
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5

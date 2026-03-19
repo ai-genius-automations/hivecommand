@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# HiveCommand Uninstaller
-# Removes HiveCommand, its config, CLI, desktop app, shell functions, and external configs.
+# OctoAlly Uninstaller
+# Removes OctoAlly, its config, CLI, desktop app, shell functions, and external configs.
+# Also cleans up legacy HiveCommand and OpenFlow artifacts.
 #
 # Usage:
 #   bash scripts/uninstall.sh
-#   curl -fsSL https://raw.githubusercontent.com/ai-genius-automations/hivecommand/main/scripts/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ai-genius-automations/octoally/main/scripts/uninstall.sh | bash
 #
 # Options:
-#   --keep-data    Keep ~/.hivecommand (database, projects, config)
+#   --keep-data    Keep ~/.octoally (database, projects, config)
 #   --yes          Skip confirmation prompt
 
 set -euo pipefail
@@ -20,9 +21,9 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-log_info()  { echo -e "${CYAN}[HiveCommand]${NC} $1"; }
-log_ok()    { echo -e "${GREEN}[HiveCommand]${NC} $1"; }
-log_warn()  { echo -e "${YELLOW}[HiveCommand]${NC} $1"; }
+log_info()  { echo -e "${CYAN}[OctoAlly]${NC} $1"; }
+log_ok()    { echo -e "${GREEN}[OctoAlly]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[OctoAlly]${NC} $1"; }
 
 KEEP_DATA=false
 SKIP_CONFIRM=false
@@ -48,11 +49,12 @@ else
   fi
 fi
 
-INSTALL_DIR="${HIVECOMMAND_INSTALL_DIR:-$TARGET_HOME/hivecommand}"
-CONFIG_DIR="$TARGET_HOME/.hivecommand"
+INSTALL_DIR="${OCTOALLY_INSTALL_DIR:-${HIVECOMMAND_INSTALL_DIR:-$TARGET_HOME/octoally}}"
+CONFIG_DIR="$TARGET_HOME/.octoally"
+OLD_HIVECOMMAND_CONFIG_DIR="$TARGET_HOME/.hivecommand"
 
 echo ""
-echo -e "${BOLD}HiveCommand Uninstaller${NC}"
+echo -e "${BOLD}OctoAlly Uninstaller${NC}"
 echo ""
 echo "This will remove:"
 echo "  - Install directory: $INSTALL_DIR"
@@ -64,7 +66,8 @@ fi
 echo "  - CLI symlink"
 echo "  - Shell function from .bashrc/.zshrc"
 echo "  - Desktop app (if installed)"
-echo "  - Espanso config for HiveCommand (if present)"
+echo "  - Espanso config for OctoAlly (if present)"
+echo "  - Legacy HiveCommand artifacts (if present)"
 echo ""
 
 if [ "$SKIP_CONFIRM" = false ] && [ -e /dev/tty ]; then
@@ -78,17 +81,19 @@ fi
 
 # --- Stop server --------------------------------------------------------------
 
-if [ -f "$INSTALL_DIR/.hivecommand.pid" ]; then
-  pid=$(cat "$INSTALL_DIR/.hivecommand.pid" 2>/dev/null || echo "")
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    log_info "Stopping HiveCommand server (PID $pid)..."
-    kill "$pid" 2>/dev/null || true
-    sleep 1
+for pid_file in "$INSTALL_DIR/.octoally.pid" "$INSTALL_DIR/.hivecommand.pid"; do
+  if [ -f "$pid_file" ]; then
+    pid=$(cat "$pid_file" 2>/dev/null || echo "")
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      log_info "Stopping server (PID $pid)..."
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+    fi
   fi
-fi
+done
 
 # Also try the CLI stop command
-for bin in "/usr/local/bin/hivecommand" "$TARGET_HOME/.local/bin/hivecommand" "$INSTALL_DIR/bin/hivecommand"; do
+for bin in "/usr/local/bin/octoally" "$TARGET_HOME/.local/bin/octoally" "$INSTALL_DIR/bin/octoally" "/usr/local/bin/hivecommand" "$TARGET_HOME/.local/bin/hivecommand"; do
   if [ -x "$bin" ]; then
     "$bin" stop 2>/dev/null || true
     break
@@ -100,24 +105,28 @@ done
 OS="$(uname -s)"
 case "$OS" in
   Linux*)
-    if command -v dpkg &>/dev/null && dpkg -l hivecommand-desktop &>/dev/null 2>&1; then
-      log_info "Removing desktop app (hivecommand-desktop)..."
-      $SUDO dpkg -r hivecommand-desktop 2>/dev/null || true
-      log_ok "Desktop app removed"
-    fi
+    for pkg in octoally-desktop hivecommand-desktop; do
+      if command -v dpkg &>/dev/null && dpkg -l "$pkg" &>/dev/null 2>&1; then
+        log_info "Removing desktop app ($pkg)..."
+        $SUDO dpkg -r "$pkg" 2>/dev/null || true
+        log_ok "Desktop app removed ($pkg)"
+      fi
+    done
     ;;
   Darwin*)
-    if [ -d "/Applications/HiveCommand.app" ]; then
-      log_info "Removing desktop app..."
-      rm -rf "/Applications/HiveCommand.app"
-      log_ok "Desktop app removed"
-    fi
+    for app in "OctoAlly.app" "HiveCommand.app"; do
+      if [ -d "/Applications/$app" ]; then
+        log_info "Removing desktop app ($app)..."
+        rm -rf "/Applications/$app"
+        log_ok "Desktop app removed ($app)"
+      fi
+    done
     ;;
 esac
 
-# --- Remove CLI symlink -------------------------------------------------------
+# --- Remove CLI symlinks -------------------------------------------------------
 
-for link in "/usr/local/bin/hivecommand" "$TARGET_HOME/.local/bin/hivecommand"; do
+for link in "/usr/local/bin/octoally" "$TARGET_HOME/.local/bin/octoally" "/usr/local/bin/hivecommand" "$TARGET_HOME/.local/bin/hivecommand"; do
   if [ -L "$link" ] || [ -f "$link" ]; then
     log_info "Removing CLI symlink: $link"
     $SUDO rm -f "$link" 2>/dev/null || rm -f "$link" 2>/dev/null || true
@@ -126,33 +135,58 @@ done
 
 # --- Remove shell function from .bashrc / .zshrc ------------------------------
 
-FUNC_MARKER="# HiveCommand hivemind launcher function"
-FUNC_END="# end-hivecommand-hivemind"
+# Remove both OctoAlly and legacy HiveCommand shell functions
+FUNC_MARKER_OCTOALLY="# OctoAlly hivemind launcher function"
+FUNC_END_OCTOALLY="# end-octoally-hivemind"
+FUNC_MARKER_HIVECOMMAND="# HiveCommand hivemind launcher function"
+FUNC_END_HIVECOMMAND="# end-hivecommand-hivemind"
 
 remove_shell_func() {
   local rc_file="$1"
   [ -f "$rc_file" ] || return 0
 
-  if grep -q "$FUNC_MARKER" "$rc_file" 2>/dev/null; then
-    if grep -q "$FUNC_END" "$rc_file" 2>/dev/null; then
-      sed -i "/$FUNC_MARKER/,/$FUNC_END/d" "$rc_file"
+  # Remove OctoAlly function
+  if grep -q "$FUNC_MARKER_OCTOALLY" "$rc_file" 2>/dev/null; then
+    if grep -q "$FUNC_END_OCTOALLY" "$rc_file" 2>/dev/null; then
+      sed -i "/$FUNC_MARKER_OCTOALLY/,/$FUNC_END_OCTOALLY/d" "$rc_file"
     else
-      sed -i "/$FUNC_MARKER/,/^}/d" "$rc_file"
+      sed -i "/$FUNC_MARKER_OCTOALLY/,/^}/d" "$rc_file"
     fi
-    log_ok "Removed shell function from $(basename "$rc_file")"
+    log_ok "Removed OctoAlly shell function from $(basename "$rc_file")"
   fi
 
-  # Remove orphaned end marker (from previous installer bugs)
-  if grep -q "$FUNC_END" "$rc_file" 2>/dev/null && ! grep -q "$FUNC_MARKER" "$rc_file" 2>/dev/null; then
-    sed -i "/^trap _cleanup EXIT INT TERM/,/$FUNC_END/d" "$rc_file"
+  # Remove legacy HiveCommand function
+  if grep -q "$FUNC_MARKER_HIVECOMMAND" "$rc_file" 2>/dev/null; then
+    if grep -q "$FUNC_END_HIVECOMMAND" "$rc_file" 2>/dev/null; then
+      sed -i "/$FUNC_MARKER_HIVECOMMAND/,/$FUNC_END_HIVECOMMAND/d" "$rc_file"
+    else
+      sed -i "/$FUNC_MARKER_HIVECOMMAND/,/^}/d" "$rc_file"
+    fi
+    log_ok "Removed legacy HiveCommand shell function from $(basename "$rc_file")"
   fi
 
-  # Remove PATH addition for ~/.local/bin if we added it
-  if grep -q '# Added by HiveCommand installer' "$rc_file" 2>/dev/null; then
-    sed -i '/# Added by HiveCommand installer/d' "$rc_file"
-    sed -i '\|export PATH=.*\.local/bin.*hivecommand|d' "$rc_file"
-    log_ok "Removed PATH entry from $(basename "$rc_file")"
-  fi
+  # Remove orphaned end markers
+  for end_marker in "$FUNC_END_OCTOALLY" "$FUNC_END_HIVECOMMAND"; do
+    local start_marker
+    if [ "$end_marker" = "$FUNC_END_OCTOALLY" ]; then
+      start_marker="$FUNC_MARKER_OCTOALLY"
+    else
+      start_marker="$FUNC_MARKER_HIVECOMMAND"
+    fi
+    if grep -q "$end_marker" "$rc_file" 2>/dev/null && ! grep -q "$start_marker" "$rc_file" 2>/dev/null; then
+      sed -i "/^trap _cleanup EXIT INT TERM/,/$end_marker/d" "$rc_file"
+    fi
+  done
+
+  # Remove PATH additions from either installer
+  for brand in "OctoAlly" "HiveCommand"; do
+    if grep -q "# Added by $brand installer" "$rc_file" 2>/dev/null; then
+      sed -i "/# Added by $brand installer/d" "$rc_file"
+      log_ok "Removed PATH entry from $(basename "$rc_file")"
+    fi
+  done
+  sed -i '\|export PATH=.*\.local/bin.*hivecommand|d' "$rc_file" 2>/dev/null || true
+  sed -i '\|export PATH=.*\.local/bin.*octoally|d' "$rc_file" 2>/dev/null || true
 }
 
 remove_shell_func "$TARGET_HOME/.bashrc"
@@ -160,12 +194,13 @@ remove_shell_func "$TARGET_HOME/.zshrc"
 
 # --- Remove espanso config ----------------------------------------------------
 
-ESPANSO_CONFIG="$TARGET_HOME/.config/espanso/config/hivecommand.yml"
-if [ -f "$ESPANSO_CONFIG" ]; then
-  log_info "Removing espanso config for HiveCommand..."
-  rm -f "$ESPANSO_CONFIG"
-  log_ok "Espanso config removed"
-fi
+for espanso_file in "$TARGET_HOME/.config/espanso/config/octoally.yml" "$TARGET_HOME/.config/espanso/config/hivecommand.yml"; do
+  if [ -f "$espanso_file" ]; then
+    log_info "Removing espanso config: $espanso_file"
+    rm -f "$espanso_file"
+    log_ok "Espanso config removed"
+  fi
+done
 
 # --- Remove install directory --------------------------------------------------
 
@@ -175,47 +210,62 @@ if [ -d "$INSTALL_DIR" ]; then
   log_ok "Install directory removed"
 fi
 
+# Also remove legacy hivecommand install dir if different
+LEGACY_INSTALL_DIR="$TARGET_HOME/hivecommand"
+if [ "$LEGACY_INSTALL_DIR" != "$INSTALL_DIR" ] && [ -d "$LEGACY_INSTALL_DIR" ]; then
+  log_info "Removing legacy install directory: $LEGACY_INSTALL_DIR"
+  rm -rf "$LEGACY_INSTALL_DIR"
+  log_ok "Legacy install directory removed"
+fi
+
 # --- Remove config/data directory ----------------------------------------------
 
-if [ -d "$CONFIG_DIR" ]; then
+_remove_config_dir() {
+  local dir="$1"
+  local label="$2"
+  [ -d "$dir" ] || return 0
+
   if [ "$KEEP_DATA" = true ]; then
-    log_info "Keeping config & database: $CONFIG_DIR (--keep-data)"
+    log_info "Keeping $label: $dir (--keep-data)"
   elif [ "$SKIP_CONFIRM" = true ]; then
-    # --yes passed without --keep-data: remove without asking
-    log_info "Removing config & database: $CONFIG_DIR"
-    rm -rf "$CONFIG_DIR"
-    log_ok "Config & database removed"
+    log_info "Removing $label: $dir"
+    rm -rf "$dir"
+    log_ok "$label removed"
   elif [ -e /dev/tty ]; then
-    # Interactive: ask the user
     echo ""
     echo -e "${YELLOW}Your projects, sessions, and database are stored in:${NC}"
-    echo "  $CONFIG_DIR"
+    echo "  $dir"
     echo ""
     echo "Keep this data? (You can reinstall later and pick up where you left off)"
-    echo -n "Keep config & database? [Y/n]: "
+    echo -n "Keep $label? [Y/n]: "
     read -r answer < /dev/tty 2>/dev/null || answer="y"
     case "$answer" in
       [nN]|[nN][oO])
-        log_info "Removing config & database: $CONFIG_DIR"
-        rm -rf "$CONFIG_DIR"
-        log_ok "Config & database removed"
+        log_info "Removing $label: $dir"
+        rm -rf "$dir"
+        log_ok "$label removed"
         ;;
       *)
         KEEP_DATA=true
-        log_ok "Config & database preserved"
+        log_ok "$label preserved"
         ;;
     esac
   else
-    # Non-interactive without --yes: keep data by default (safe choice)
     KEEP_DATA=true
-    log_info "Keeping config & database (run with --yes to remove, or --keep-data to silence this)"
+    log_info "Keeping $label (run with --yes to remove, or --keep-data to silence this)"
   fi
+}
+
+_remove_config_dir "$CONFIG_DIR" "config & database"
+# Also clean up legacy .hivecommand config dir
+if [ -d "$OLD_HIVECOMMAND_CONFIG_DIR" ]; then
+  _remove_config_dir "$OLD_HIVECOMMAND_CONFIG_DIR" "legacy HiveCommand config"
 fi
 
 # --- Done ----------------------------------------------------------------------
 
 echo ""
-echo -e "${GREEN}${BOLD}HiveCommand has been uninstalled.${NC}"
+echo -e "${GREEN}${BOLD}OctoAlly has been uninstalled.${NC}"
 if [ "$KEEP_DATA" = true ]; then
   echo ""
   echo "  Your data is preserved at: $CONFIG_DIR"

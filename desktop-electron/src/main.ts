@@ -17,7 +17,7 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 600,
-    title: 'HiveCommand',
+    title: 'OctoAlly',
     icon: path.join(__dirname, '..', 'icons', '128x128.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -82,14 +82,14 @@ function createWindow() {
 
   // Recover from renderer crashes — reload the page instead of showing a blank window
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error(`[HiveCommand] Renderer process gone: ${details.reason}`);
+    console.error(`[OctoAlly] Renderer process gone: ${details.reason}`);
     if (details.reason !== 'clean-exit') {
       setTimeout(() => mainWindow?.webContents.reload(), 500);
     }
   });
 
   mainWindow.webContents.on('unresponsive', () => {
-    console.warn('[HiveCommand] Window became unresponsive, reloading...');
+    console.warn('[OctoAlly] Window became unresponsive, reloading...');
     setTimeout(() => mainWindow?.webContents.reload(), 1000);
   });
 
@@ -168,21 +168,21 @@ app.whenReady().then(async () => {
   // Start server if port 42010 is not reachable (regardless of PID file state)
   let reachable = await isServerReachable();
   if (!reachable) {
-    console.log('[HiveCommand] Server not reachable, starting...');
+    console.log('[OctoAlly] Server not reachable, starting...');
     const started = await startServer(cliPath);
     if (started) {
-      console.log('[HiveCommand] Server started, waiting for it to become reachable...');
+      console.log('[OctoAlly] Server started, waiting for it to become reachable...');
       reachable = await waitForServer();
       if (reachable) {
-        console.log('[HiveCommand] Server is now reachable');
+        console.log('[OctoAlly] Server is now reachable');
       } else {
-        console.warn('[HiveCommand] Server started but not reachable after 10s');
+        console.warn('[OctoAlly] Server started but not reachable after 10s');
       }
     } else {
-      console.warn('[HiveCommand] Failed to start server');
+      console.warn('[OctoAlly] Failed to start server');
     }
   } else {
-    console.log('[HiveCommand] Server already reachable on port 42010');
+    console.log('[OctoAlly] Server already reachable on port 42010');
   }
 
   createWindow();
@@ -199,7 +199,7 @@ app.whenReady().then(async () => {
   const defaultUA = webpageSession.getUserAgent();
   const cleanUA = defaultUA
     .replace(/\s*Electron\/\S+/g, '')
-    .replace(/\s*hivecommand-desktop\/\S+/g, '');
+    .replace(/\s*octoally-desktop\/\S+/g, '');
   webpageSession.setUserAgent(cleanUA);
 
   // OAuth flow: Google blocks ALL embedded browsers (Electron BrowserWindow, webview,
@@ -290,9 +290,9 @@ app.whenReady().then(async () => {
 </style></head>
 <body><div class="card">
   <div class="logo-wrap">
-    <img src="http://localhost:42010/hivecommand-logo.png" alt="HiveCommand"
+    <img src="http://localhost:42010/octoally-logo.png" alt="OctoAlly"
          onerror="this.style.display='none';document.querySelector('.logo-fallback').style.display='inline'">
-    <span class="logo-fallback" style="display:none">HiveCommand</span>
+    <span class="logo-fallback" style="display:none">OctoAlly</span>
   </div>
   <div class="label">OAuth Connector</div>
   <div class="divider"></div>
@@ -313,7 +313,7 @@ app.whenReady().then(async () => {
       document.getElementById('spinner').style.display = 'none';
       document.getElementById('check').style.display = 'flex';
       document.getElementById('title').textContent = 'Signed in!';
-      document.getElementById('msg').textContent = 'You can close this tab and return to HiveCommand.';
+      document.getElementById('msg').textContent = 'You can close this tab and return to OctoAlly.';
     });
   } else {
     document.getElementById('spinner').style.display = 'none';

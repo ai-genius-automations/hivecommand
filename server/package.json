@@ -1,7 +1,7 @@
 {
-  "name": "@hivecommand/server",
-  "version": "0.1.45-alpha",
-  "description": "HiveCommand backend server — Fastify + SQLite + WebSocket",
+  "name": "@octoally/server",
+  "version": "0.1.44-alpha",
+  "description": "OctoAlly backend server — Fastify + SQLite + WebSocket",
   "author": "AI Genius Automations <support@aigeniusautomations.com>",
   "license": "Apache-2.0 WITH Commons-Clause",
   "type": "module",

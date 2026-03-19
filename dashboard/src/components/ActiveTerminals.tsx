@@ -24,8 +24,8 @@ interface ExpandedSession {
   projectId: string | null;
 }
 
-const COLUMNS_KEY = 'hivecommand-active-terminals-cols';
-const ROWS_KEY = 'hivecommand-active-terminals-rows';
+const COLUMNS_KEY = 'octoally-active-terminals-cols';
+const ROWS_KEY = 'octoally-active-terminals-rows';
 
 export function ActiveTerminals({ onBack, onGoToSession, openProjectIds, hiddenSessionIds }: ActiveTerminalsProps) {
   const queryClient = useQueryClient();
@@ -155,7 +155,7 @@ export function ActiveTerminals({ onBack, onGoToSession, openProjectIds, hiddenS
     refreshedRef.current = true;
     const t = setTimeout(() => {
       for (const { session } of cards) {
-        window.dispatchEvent(new CustomEvent('hivecommand:refresh-terminal', {
+        window.dispatchEvent(new CustomEvent('octoally:refresh-terminal', {
           detail: { sessionId: session.id },
         }));
       }

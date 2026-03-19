@@ -49,9 +49,11 @@ function migrateSettingsHookPaths(projectPath: string): string | null {
   return null;
 }
 
-/** Shared ruflo-run.sh — created by DevCortex installer, shared with HiveCommand.
+/** Shared ruflo-run.sh — created by DevCortex installer, shared with OctoAlly.
  *  Falls back to npx if the script doesn't exist (no DevCortex installed). */
-const RUFLO_RUN = join(homedir(), '.hivecommand', 'ruflo-run.sh');
+const RUFLO_RUN = existsSync(join(homedir(), '.octoally', 'ruflo-run.sh'))
+  ? join(homedir(), '.octoally', 'ruflo-run.sh')
+  : join(homedir(), '.hivecommand', 'ruflo-run.sh');
 const HAS_RUFLO_RUN = existsSync(RUFLO_RUN);
 
 /** SONA patch script — patches ruflo's hook-handler.cjs with trajectory learning.
@@ -115,15 +117,15 @@ export interface Project {
   updated_at: string;
 }
 
-/** ~/.hivecommand/projects.json — portable backup, not the source of truth */
-const HIVECOMMAND_DIR = join(homedir(), '.hivecommand');
-const PROJECTS_FILE = join(HIVECOMMAND_DIR, 'projects.json');
+/** ~/.octoally/projects.json — portable backup, not the source of truth */
+const OCTOALLY_DIR = join(homedir(), '.octoally');
+const PROJECTS_FILE = join(OCTOALLY_DIR, 'projects.json');
 
 /** Export current DB projects to the config file (for portability across DB resets) */
 async function exportToConfig(): Promise<void> {
   const db = getDb();
   const rows = db.prepare('SELECT name, path, description, ruflo_prompt, openclaw_prompt, default_web_url FROM projects ORDER BY name COLLATE NOCASE').all();
-  await mkdir(HIVECOMMAND_DIR, { recursive: true });
+  await mkdir(OCTOALLY_DIR, { recursive: true });
   await writeFile(PROJECTS_FILE, JSON.stringify({ projects: rows }, null, 2), 'utf-8');
 }
 
@@ -156,7 +158,7 @@ export async function initProjects(): Promise<void> {
       imported++;
     }
     if (imported > 0) {
-      console.log(`  Imported ${imported} projects from ~/.hivecommand/projects.json`);
+      console.log(`  Imported ${imported} projects from ~/.octoally/projects.json`);
     }
   } catch {
     // No config file — that's fine, new user starts with empty projects
@@ -516,7 +518,7 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     return { globalInstalled, statuses };
   });
 
-  // Install DevCortex for a project (runs the hivecommand installer script)
+  // Install DevCortex for a project (runs the OctoAlly installer script)
   app.post<{
     Params: { id: string };
   }>('/projects/:id/devcortex-install', async (req, reply) => {
@@ -541,8 +543,8 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: 'DevCortex global config missing api_key or server_url' });
     }
 
-    // Run the HiveCommand-specific DevCortex installer via curl
-    const installUrl = `${globalConfig.server_url}/api/setup/install-hivecommand.sh?key=${globalConfig.api_key}`;
+    // Run the OctoAlly-specific DevCortex installer via curl
+    const installUrl = `${globalConfig.server_url}/api/setup/install-octoally.sh?key=${globalConfig.api_key}`;
     try {
       const result = await execFileAsync('bash', ['-c', `curl -fsSL "${installUrl}" | bash`], {
         cwd: project.path,

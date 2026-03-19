@@ -3,12 +3,13 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { config } from '../config.js';
 
-const HIVECOMMAND_HOOK_MARKER = '# hivecommand-events-hook';
+const OCTOALLY_HOOK_MARKER = '# octoally-events-hook';
+const LEGACY_HOOK_MARKER = '# hivecommand-events-hook';
 
 /**
- * Build the inline hook command that POSTs tool use events to HiveCommand.
+ * Build the inline hook command that POSTs tool use events to OctoAlly.
  * Claude Code passes hook data as JSON on stdin — we read it, extract fields,
- * and POST to the HiveCommand events API. Uses jq for lightweight JSON processing.
+ * and POST to the OctoAlly events API. Uses jq for lightweight JSON processing.
  * Falls back to sending raw stdin if jq is not available.
  */
 function buildHookCommand(projectPath: string): string {
@@ -17,7 +18,7 @@ function buildHookCommand(projectPath: string): string {
   // Read stdin JSON, extract tool_name and tool_input, build POST payload
   // jq constructs the payload; curl sends it. All in one pipeline, backgrounded.
   const escapedPath = projectPath.replace(/"/g, '\\"');
-  return `INPUT=$(cat); echo "$INPUT" | jq -c '{type:"tool_use",tool_name:.tool_name,session_id:.session_id,project_path:"${escapedPath}",data:{tool:.tool_name,session:.session_id,file_path:(.tool_input.file_path // .tool_input.path // ""),command:(.tool_input.command // ""),pattern:(.tool_input.pattern // ""),description:(.tool_input.description // "")}}' 2>/dev/null | curl -s -X POST "${url}" -H "Content-Type: application/json" -d @- > /dev/null 2>&1 &  ${HIVECOMMAND_HOOK_MARKER}`;
+  return `INPUT=$(cat); echo "$INPUT" | jq -c '{type:"tool_use",tool_name:.tool_name,session_id:.session_id,project_path:"${escapedPath}",data:{tool:.tool_name,session:.session_id,file_path:(.tool_input.file_path // .tool_input.path // ""),command:(.tool_input.command // ""),pattern:(.tool_input.pattern // ""),description:(.tool_input.description // "")}}' 2>/dev/null | curl -s -X POST "${url}" -H "Content-Type: application/json" -d @- > /dev/null 2>&1 &  ${OCTOALLY_HOOK_MARKER}`;
 }
 
 interface ClaudeSettings {
@@ -57,7 +58,7 @@ async function saveSettings(projectPath: string, settings: ClaudeSettings): Prom
 function isHookInstalled(settings: ClaudeSettings): boolean {
   const entries = settings.hooks?.PostToolUse || [];
   return entries.some((entry) =>
-    entry.hooks?.some((h) => h.command?.includes(HIVECOMMAND_HOOK_MARKER))
+    entry.hooks?.some((h) => h.command?.includes(OCTOALLY_HOOK_MARKER) || h.command?.includes(LEGACY_HOOK_MARKER))
   );
 }
 
@@ -85,7 +86,7 @@ function uninstallHook(settings: ClaudeSettings): ClaudeSettings {
   if (!settings.hooks?.PostToolUse) return settings;
 
   settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(
-    (entry) => !entry.hooks?.some((h) => h.command?.includes(HIVECOMMAND_HOOK_MARKER))
+    (entry) => !entry.hooks?.some((h) => h.command?.includes(OCTOALLY_HOOK_MARKER) || h.command?.includes(LEGACY_HOOK_MARKER))
   );
 
   // Clean up empty arrays
@@ -100,7 +101,7 @@ function uninstallHook(settings: ClaudeSettings): ClaudeSettings {
 }
 
 export const hooksRoutes: FastifyPluginAsync = async (app) => {
-  // Check if the HiveCommand events hook is installed for a project
+  // Check if the OctoAlly events hook is installed for a project
   app.get<{
     Querystring: { path: string };
   }>('/hooks/events-status', async (req, reply) => {
@@ -111,7 +112,7 @@ export const hooksRoutes: FastifyPluginAsync = async (app) => {
     return { installed: isHookInstalled(settings) };
   });
 
-  // Install or uninstall the HiveCommand events hook
+  // Install or uninstall the OctoAlly events hook
   app.post<{
     Body: { path: string; action: 'install' | 'uninstall' };
   }>('/hooks/events', async (req, reply) => {

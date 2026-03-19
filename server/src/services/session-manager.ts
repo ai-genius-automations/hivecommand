@@ -20,7 +20,7 @@ const { SerializeAddon } = nodeRequire('@xterm/addon-serialize') as { SerializeA
 const execFileAsync = promisify(execFile);
 const readFileAsync = promisify(readFile);
 
-const TIMING_LOG = '/tmp/hivecommand-timing.log';
+const TIMING_LOG = '/tmp/octoally-timing.log';
 function tlog(s: string): void {
   try { appendFileSync(TIMING_LOG, `[${new Date().toISOString()}] ${s}\n`); } catch {}
 }
@@ -395,43 +395,70 @@ export function querySessionOutputSince(
    the worker process.
    ================================================================ */
 
-const TMUX_SERVER = 'hivecommand';
+const TMUX_SERVER = 'octoally';
+const LEGACY_TMUX_SERVERS = ['hivecommand', 'openflow'];
 const tmuxBaseArgs = ['-L', TMUX_SERVER];
 
 function tmuxSessionName(sessionId: string): string {
   return `of-${sessionId}`;
 }
 
-/** Check if a tmux session is alive (async, non-blocking) */
-async function tmuxExistsAsync(sessionId: string): Promise<boolean> {
-  try {
-    await execFileAsync('tmux', [...tmuxBaseArgs, 'has-session', '-t', tmuxSessionName(sessionId)]);
-    return true;
-  } catch {
-    return false;
+/** Get tmux args for the server that actually hosts a session (checks legacy servers) */
+function tmuxArgsForSession(sessionId: string): string[] {
+  const name = tmuxSessionName(sessionId);
+  for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    try {
+      execFileSync('tmux', ['-L', server, 'has-session', '-t', name], { stdio: 'ignore' });
+      return ['-L', server];
+    } catch { /* try next */ }
   }
+  return tmuxBaseArgs;
 }
 
-/** List all hivecommand tmux session IDs that are still alive */
-function tmuxListHivecommandSessionIds(): string[] {
-  try {
-    const output = execFileSync('tmux', [...tmuxBaseArgs, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
-    return output
-      .trim()
-      .split('\n')
-      .filter(name => name.startsWith('of-'))
-      .map(name => name.replace('of-', ''));
-  } catch {
-    return [];
+/** Check if a tmux session is alive on any server (octoally, hivecommand, openflow) */
+async function tmuxExistsAsync(sessionId: string): Promise<boolean> {
+  const name = tmuxSessionName(sessionId);
+  for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    try {
+      await execFileAsync('tmux', ['-L', server, 'has-session', '-t', name]);
+      return true;
+    } catch { /* try next */ }
   }
+  return false;
+}
+
+/** List all OctoAlly tmux session IDs that are still alive (checks legacy servers too) */
+function tmuxListOctoallySessionIds(): string[] {
+  const ids = new Set<string>();
+  for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    try {
+      const output = execFileSync('tmux', ['-L', server, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
+      output
+        .trim()
+        .split('\n')
+        .filter(name => name.startsWith('of-'))
+        .map(name => name.replace('of-', ''))
+        .forEach(id => ids.add(id));
+    } catch { /* server not running */ }
+  }
+  return [...ids];
 }
 
 /* ================================================================
    dtach helpers — only used for status checks in the main process.
    ================================================================ */
 
+const DTACH_PREFIXES = ['octoally-', 'hivecommand-', 'openflow-'];
+
+/** Find the dtach socket for a session, checking all name prefixes */
 function dtachSocket(sessionId: string): string {
-  return `/tmp/hivecommand-${sessionId}.sock`;
+  // Check legacy prefixes first (existing sessions), then new prefix
+  for (const prefix of DTACH_PREFIXES) {
+    const sock = `/tmp/${prefix}${sessionId}.sock`;
+    if (existsSync(sock)) return sock;
+  }
+  // Default to new prefix for new sessions
+  return `/tmp/octoally-${sessionId}.sock`;
 }
 
 function dtachExists(sessionId: string): boolean {
@@ -457,22 +484,23 @@ async function dtachExistsAsync(sessionId: string): Promise<boolean> {
   }
 }
 
-/** List all hivecommand dtach sessions that are still alive */
-function dtachListHivecommandSessions(): string[] {
+/** List all OctoAlly dtach sessions that are still alive (checks legacy prefixes too) */
+function dtachListOctoallySessions(): string[] {
+  const ids = new Set<string>();
   try {
-    const files = readdirSync('/tmp')
-      .filter(f => f.startsWith('hivecommand-') && f.endsWith('.sock'));
-    const alive: string[] = [];
-    for (const f of files) {
-      const sessionId = f.replace('hivecommand-', '').replace('.sock', '');
-      if (dtachExists(sessionId)) {
-        alive.push(sessionId);
-      }
+    const files = readdirSync('/tmp');
+    for (const prefix of DTACH_PREFIXES) {
+      files
+        .filter(f => f.startsWith(prefix) && f.endsWith('.sock'))
+        .forEach(f => {
+          const sessionId = f.replace(prefix, '').replace('.sock', '');
+          if (dtachExists(sessionId)) {
+            ids.add(sessionId);
+          }
+        });
     }
-    return alive;
-  } catch {
-    return [];
-  }
+  } catch { /* /tmp read failed */ }
+  return [...ids];
 }
 
 /* ================================================================
@@ -664,7 +692,7 @@ function wireWorker(sessionId: string, worker: ChildProcess, projectPath?: strin
         const taskSnippet = (() => {
           try { return (getDb().prepare('SELECT task FROM sessions WHERE id = ?').get(sessionId) as any)?.task?.slice(0, 60) ?? ''; } catch { return ''; }
         })();
-        pushSystemEvent(`[HiveCommand] Session ${sessionId} ${status} (exit ${msg.exitCode}): ${taskSnippet}`);
+        pushSystemEvent(`[OctoAlly] Session ${sessionId} ${status} (exit ${msg.exitCode}): ${taskSnippet}`);
 
         for (const ws of active.subscribers) {
           try {
@@ -818,7 +846,7 @@ export async function spawnClaudeFlow(sessionId: string, projectPath: string, ta
     data: { task, projectPath, tmux: config.useTmux, dtach: config.useDtach },
   });
 
-  pushSystemEvent(`[HiveCommand] Session ${sessionId} started: ${task.slice(0, 60)}`);
+  pushSystemEvent(`[OctoAlly] Session ${sessionId} started: ${task.slice(0, 60)}`);
 }
 
 export async function spawnTerminal(sessionId: string, projectPath: string, cols = 180, rows = 40): Promise<void> {
@@ -874,7 +902,7 @@ export async function spawnAgent(sessionId: string, projectPath: string, task: s
     data: { task, projectPath, tmux: config.useTmux, mode: 'agent', agentType },
   });
 
-  pushSystemEvent(`[HiveCommand] Agent ${agentType} session ${sessionId} started: ${task.slice(0, 60)}`);
+  pushSystemEvent(`[OctoAlly] Agent ${agentType} session ${sessionId} started: ${task.slice(0, 60)}`);
 }
 
 /**
@@ -956,7 +984,7 @@ export async function reconnectSession(sessionId: string, opts?: { skipPipePaneR
       try {
         const name = tmuxSessionName(sessionId);
         const { stdout: rawStdout } = await execFileAsync('tmux', [
-          ...tmuxBaseArgs, 'capture-pane', '-t', name, '-p', '-e', '-T', '-S', '-',
+          ...tmuxArgsForSession(sessionId), 'capture-pane', '-t', name, '-p', '-e', '-T', '-S', '-',
         ], { encoding: 'utf8', maxBuffer: 5 * 1024 * 1024 });
         const stdout = trimCaptureOutput(rawStdout);
         if (stdout) {
@@ -1085,7 +1113,7 @@ export function requestCapture(sessionId: string, ws: WebSocket): Promise<void> 
   return new Promise((resolve) => {
     const chunks: string[] = [];
     const proc = spawn('tmux', [
-      ...tmuxBaseArgs, 'capture-pane', '-t', name, '-p', '-e', '-T',
+      ...tmuxArgsForSession(sessionId), 'capture-pane', '-t', name, '-p', '-e', '-T',
     ], { stdio: ['ignore', 'pipe', 'ignore'] });
 
     proc.stdout!.setEncoding('utf8');
@@ -1346,8 +1374,8 @@ export async function killSession(sessionId: string): Promise<boolean> {
 }
 
 /**
- * Release an HiveCommand session back to its dtach socket without killing the process.
- * Used by pop-out: tears down the HiveCommand worker/tmux wrapper but leaves the
+ * Release an OctoAlly session back to its dtach socket without killing the process.
+ * Used by pop-out: tears down the OctoAlly worker/tmux wrapper but leaves the
  * dtach master alive so a real terminal (or re-adopt) can connect to it.
  */
 export function releaseSession(sessionId: string): boolean {
@@ -1426,7 +1454,7 @@ export function getActiveSession(sessionId: string): ActiveSession | undefined {
 /**
  * Get the dtach socket path for a session.
  * For adopted sessions, returns the external socket path.
- * For regular sessions, returns the hivecommand dtach socket path.
+ * For regular sessions, returns the OctoAlly dtach socket path.
  */
 export function getSessionSocketPath(sessionId: string): string | null {
   const active = activeSessions.get(sessionId);
@@ -1450,12 +1478,25 @@ export function getSessionTmuxName(sessionId: string): string | null {
   const active = activeSessions.get(sessionId);
   if (!active) return null;
   const name = tmuxSessionName(sessionId);
-  try {
-    execFileSync('tmux', [...tmuxBaseArgs, 'has-session', '-t', name], { stdio: 'ignore' });
-    return name;
-  } catch {
-    return null;
+  for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    try {
+      execFileSync('tmux', ['-L', server, 'has-session', '-t', name], { stdio: 'ignore' });
+      return name;
+    } catch { /* try next */ }
   }
+  return null;
+}
+
+/** Get the tmux server name that hosts a session */
+export function getSessionTmuxServer(sessionId: string): string {
+  const name = tmuxSessionName(sessionId);
+  for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    try {
+      execFileSync('tmux', ['-L', server, 'has-session', '-t', name], { stdio: 'ignore' });
+      return server;
+    } catch { /* try next */ }
+  }
+  return TMUX_SERVER;
 }
 
 /**
@@ -1485,10 +1526,10 @@ export function killAllSessions(): void {
 }
 
 // killOrphanedClaudeProcesses was removed — it killed ANY claude process not on
-// an hivecommand tmux PTY, which incorrectly killed: (1) adopted external sessions
+// an OctoAlly tmux PTY, which incorrectly killed: (1) adopted external sessions
 // whose claude runs on the real terminal's PTY, and (2) user-launched claude
 // sessions in their own terminals. Per-session cleanup in cleanupStaleRunningSessions
-// handles dead hivecommand sessions individually via killOrphanedDaemon/killOrphanedProcess.
+// handles dead OctoAlly sessions individually via killOrphanedDaemon/killOrphanedProcess.
 
 /**
  * On server startup, handle sessions from previous run.
@@ -1509,8 +1550,8 @@ export async function cleanupStaleRunningSessions(): Promise<void> {
     if (stale.length === 0) { tlog(`[CLEANUP] no stale sessions, done in ${Date.now() - t0}ms`); return; }
 
     const t1 = Date.now();
-    const aliveDtach = config.useDtach ? new Set(dtachListHivecommandSessions()) : new Set<string>();
-    const aliveTmux = config.useTmux ? new Set(tmuxListHivecommandSessionIds()) : new Set<string>();
+    const aliveDtach = config.useDtach ? new Set(dtachListOctoallySessions()) : new Set<string>();
+    const aliveTmux = config.useTmux ? new Set(tmuxListOctoallySessionIds()) : new Set<string>();
     tlog(`[CLEANUP] session listing: ${Date.now() - t1}ms (${stale.length} stale, ${aliveTmux.size} tmux, ${aliveDtach.size} dtach)`);
     let detached = 0;
     let cleaned = 0;
@@ -1584,10 +1625,10 @@ export async function cleanupStaleRunningSessions(): Promise<void> {
   }
 
   // NOTE: We no longer run killOrphanedClaudeProcesses() here.
-  // That function killed ANY claude process not on an hivecommand tmux PTY,
+  // That function killed ANY claude process not on an OctoAlly tmux PTY,
   // which is wrong — users run claude in their own terminals, and adopted
   // sessions have claude on external PTYs. Per-session cleanup above
-  // already handles dead hivecommand sessions individually.
+  // already handles dead OctoAlly sessions individually.
 
   // Restore adoptedSockets from DB so adopted sessions aren't shown as
   // discoverable again after restart.
@@ -1725,7 +1766,7 @@ async function resumeCrashedSession(staleSession: Session, projectPath: string):
     data: { task, projectPath, claudeSessionId: claudeUuid },
   });
 
-  pushSystemEvent(`[HiveCommand] Session ${sessionId} resumed after crash: ${task.slice(0, 60)}`);
+  pushSystemEvent(`[OctoAlly] Session ${sessionId} resumed after crash: ${task.slice(0, 60)}`);
 }
 
 /* ================================================================
@@ -1758,10 +1799,10 @@ async function fuserPidsAsync(sockPath: string): Promise<number[]> {
   }
 }
 
-async function isHiveCommandOwnedAsync(pid: number): Promise<boolean> {
+async function isOctoAllyOwnedAsync(pid: number): Promise<boolean> {
   try {
     const environ = await readFileAsync(`/proc/${pid}/environ`, 'utf8');
-    return environ.includes('HIVECOMMAND_SESSION=') || environ.includes('OPENFLOW_SESSION=');
+    return environ.includes('OCTOALLY_SESSION=') || environ.includes('HIVECOMMAND_SESSION=') || environ.includes('OPENFLOW_SESSION=');
   } catch {
     return false;
   }
@@ -1784,7 +1825,7 @@ export async function discoverExternalSessions(projectPath?: string): Promise<Di
       const hivePids = await fuserPidsAsync(sockPath);
       if (hivePids.length === 0) continue;
 
-      const ownerChecks = await Promise.all(hivePids.map(p => isHiveCommandOwnedAsync(p)));
+      const ownerChecks = await Promise.all(hivePids.map(p => isOctoAllyOwnedAsync(p)));
       if (ownerChecks.some(owned => owned)) continue;
 
       let sessionProjectPath = '';
@@ -1813,7 +1854,7 @@ export async function discoverExternalSessions(projectPath?: string): Promise<Di
     }
   } catch { /* /tmp read failed */ }
 
-  // Also discover released HiveCommand tmux sessions (popped-out sessions)
+  // Also discover released OctoAlly tmux sessions (popped-out sessions)
   // Collect socket paths already found by dtach scan to avoid duplicates
   const foundSockets = new Set(results.map(r => r.socketPath));
   try {
@@ -1832,11 +1873,10 @@ export async function discoverExternalSessions(projectPath?: string): Promise<Di
       // Skip if this session's external dtach socket was already found by the dtach scan
       if (s.external_socket && foundSockets.has(s.external_socket)) continue;
 
-      // Verify the tmux session is still alive
+      // Verify the tmux session is still alive (check all servers)
       const tmuxName = tmuxSessionName(s.id);
-      try {
-        await execFileAsync('tmux', [...tmuxBaseArgs, 'has-session', '-t', tmuxName]);
-      } catch {
+      const tmuxAlive = await tmuxExistsAsync(s.id);
+      if (!tmuxAlive) {
         // tmux session is gone — mark as failed
         db.prepare(`UPDATE sessions SET status = 'failed', updated_at = datetime('now') WHERE id = ?`).run(s.id);
         continue;
@@ -1857,7 +1897,7 @@ export async function discoverExternalSessions(projectPath?: string): Promise<Di
 }
 
 export async function adoptDtachSession(socketPath: string, projectId?: string): Promise<Session | null> {
-  // Handle re-adoption of released HiveCommand tmux sessions
+  // Handle re-adoption of released OctoAlly tmux sessions
   if (socketPath.startsWith('tmux:')) {
     return readoptReleasedSession(socketPath.replace('tmux:', ''), projectId);
   }
@@ -1868,7 +1908,7 @@ export async function adoptDtachSession(socketPath: string, projectId?: string):
   const socketPids = await fuserPidsAsync(socketPath);
   if (socketPids.length === 0) return null;
 
-  const ownerChecks = await Promise.all(socketPids.map(p => isHiveCommandOwnedAsync(p)));
+  const ownerChecks = await Promise.all(socketPids.map(p => isOctoAllyOwnedAsync(p)));
   if (ownerChecks.some(owned => owned)) return null;
 
   // Check if there's a released session that previously used this socket
@@ -1922,7 +1962,7 @@ export async function adoptDtachSession(socketPath: string, projectId?: string):
 }
 
 /**
- * Re-adopt a released HiveCommand tmux session (popped-out and now being brought back).
+ * Re-adopt a released OctoAlly tmux session (popped-out and now being brought back).
  * Changes status from 'released' to 'detached' and reconnects via the existing reconnect path.
  */
 async function readoptReleasedSession(tmuxName: string, _projectId?: string): Promise<Session | null> {
@@ -1932,22 +1972,21 @@ async function readoptReleasedSession(tmuxName: string, _projectId?: string): Pr
   const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Session | undefined;
   if (!session || session.status !== 'released') return null;
 
-  // Verify tmux session is still alive
-  try {
-    await execFileAsync('tmux', [...tmuxBaseArgs, 'has-session', '-t', tmuxName]);
-  } catch {
+  // Verify tmux session is still alive (check all servers)
+  const serverArgs = tmuxArgsForSession(sessionId);
+  if (!(await tmuxExistsAsync(sessionId))) {
     db.prepare(`UPDATE sessions SET status = 'failed', updated_at = datetime('now') WHERE id = ?`).run(sessionId);
     return null;
   }
 
   // Detach all external clients (e.g. tilix) from the tmux session
-  // so they don't fight with HiveCommand's worker for input/output
+  // so they don't fight with OctoAlly's worker for input/output
   try {
-    const { stdout } = await execFileAsync('tmux', [...tmuxBaseArgs, 'list-clients', '-t', tmuxName, '-F', '#{client_tty}'], { encoding: 'utf8' });
+    const { stdout } = await execFileAsync('tmux', [...serverArgs, 'list-clients', '-t', tmuxName, '-F', '#{client_tty}'], { encoding: 'utf8' });
     const ttys = stdout.trim().split('\n').filter(Boolean);
     for (const tty of ttys) {
       try {
-        await execFileAsync('tmux', [...tmuxBaseArgs, 'detach-client', '-t', tty]);
+        await execFileAsync('tmux', [...serverArgs, 'detach-client', '-t', tty]);
       } catch { /* client may have already disconnected */ }
     }
   } catch { /* no clients attached */ }
@@ -1959,10 +1998,10 @@ async function readoptReleasedSession(tmuxName: string, _projectId?: string): Pr
   // This ensures capture-pane grabs content at the correct dashboard width.
   const dashboardCols = session.terminal_cols || 120;
   try {
-    await execFileAsync('tmux', [...tmuxBaseArgs, 'resize-window', '-t', tmuxName, '-x', String(dashboardCols)]);
+    await execFileAsync('tmux', [...serverArgs, 'resize-window', '-t', tmuxName, '-x', String(dashboardCols)]);
     // Unset window-size=manual that resize-window implicitly sets.
     // Without this, future clients (e.g. Tilix on next pop-out) can't resize the window.
-    await execFileAsync('tmux', [...tmuxBaseArgs, 'set-option', '-t', tmuxName, '-u', 'window-size']);
+    await execFileAsync('tmux', [...serverArgs, 'set-option', '-t', tmuxName, '-u', 'window-size']);
   } catch { /* ignore */ }
 
   // Mark as detached so reconnectSession() can pick it up
@@ -1982,7 +2021,7 @@ async function readoptReleasedSession(tmuxName: string, _projectId?: string): Pr
  */
 export async function spawnAdopt(sessionId: string, socketPath: string, projectPath: string, task: string, cols: number, rows: number): Promise<void> {
   // Detach all existing dtach -a clients for this socket BEFORE we attach.
-  // This disconnects the user's real terminal so it doesn't fight with HiveCommand.
+  // This disconnects the user's real terminal so it doesn't fight with OctoAlly.
   // We use pkill to SIGHUP dtach clients matching the socket path.
   // SIGHUP on a dtach client causes a clean detach (the master stays alive).
   try {
@@ -2026,7 +2065,7 @@ export async function spawnAdopt(sessionId: string, socketPath: string, projectP
     data: { task, projectPath, externalSocket: socketPath, tmux: config.useTmux },
   });
 
-  pushSystemEvent(`[HiveCommand] Adopted external session ${sessionId}: ${task.slice(0, 60)}`);
+  pushSystemEvent(`[OctoAlly] Adopted external session ${sessionId}: ${task.slice(0, 60)}`);
 }
 
 function killOrphanedProcess(pid: number, sessionId: string): void {

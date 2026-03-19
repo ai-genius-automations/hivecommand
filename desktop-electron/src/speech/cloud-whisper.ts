@@ -51,7 +51,7 @@ export function transcribeCloud(
     const start = Date.now();
 
     // Build multipart/form-data body
-    const boundary = `----HiveCommandBoundary${Date.now()}`;
+    const boundary = `----OctoAllyBoundary${Date.now()}`;
     const parts: Buffer[] = [];
 
     // file field

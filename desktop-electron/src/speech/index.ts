@@ -44,7 +44,7 @@ function modelDownloadUrl(size: string): string {
 }
 
 function modelsDir(): string {
-  return path.join(os.homedir(), '.hivecommand', 'models');
+  return path.join(os.homedir(), '.octoally', 'models');
 }
 
 function modelPath(size: string): string {
@@ -52,7 +52,7 @@ function modelPath(size: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Config persistence (~/.hivecommand/stt-config.json)
+// Config persistence (~/.octoally/stt-config.json)
 // ---------------------------------------------------------------------------
 
 interface SttConfig {
@@ -68,7 +68,7 @@ interface SttConfig {
 }
 
 function configPath(): string {
-  return path.join(os.homedir(), '.hivecommand', 'stt-config.json');
+  return path.join(os.homedir(), '.octoally', 'stt-config.json');
 }
 
 function loadConfig(): Partial<SttConfig> {
@@ -114,7 +114,7 @@ function matchesWakePhrase(transcription: string, wakePhrase: string): boolean {
   if (normalized.includes(phrase)) return true;
 
   // Fuzzy: check if phrase words appear in sequence (allowing extra words)
-  // Handles: "hey open flow" vs "hey hivecommand", etc.
+  // Handles: "hey octo ally" vs "hey octoally", etc.
   const words = normalized.split(/\s+/);
   const phraseWords = phrase.split(/\s+/);
 
@@ -127,21 +127,21 @@ function matchesWakePhrase(transcription: string, wakePhrase: string): boolean {
   if (pi === phraseWords.length) return true;
 
   // Also try joining all words to handle splits/merges
-  // e.g., "open flow" should match "hivecommand", "heyhivecommand" should match "hey hivecommand"
+  // e.g., "octo ally" should match "octoally", "heyoctoally" should match "hey octoally"
   const joinedPhrase = phraseWords.join('');
   const joinedWords = words.join('');
   if (joinedWords.includes(joinedPhrase)) return true;
 
-  // Common tiny model mishearings for "hey hivecommand"
+  // Common tiny model mishearings for "hey octoally"
   // The tiny model often hears fast speech as slightly different words
   const aliases: Record<string, string[]> = {
-    'hey hivecommand': [
-      'hey open flow', 'a hivecommand', 'a open flow',
-      'hey hivecommand', 'heyhivecommand', 'hey open flo',
-      'hey openflo', 'hey openfloor', 'hey open floor',
-      'hey openfl', 'hey open fl', 'hey hivecommand',
-      'hey, hivecommand', 'hay hivecommand', 'hey, open flow',
-      'hey opin flow', 'hey open fo', 'hey openfo',
+    'hey octoally': [
+      'hey octo ally', 'a octoally', 'a octo ally',
+      'hey octoally', 'heyoctoally', 'hey octo ali',
+      'hey octoali', 'hey octoly', 'hey octo lee',
+      'hey octoly', 'hey octo li', 'hey octoally',
+      'hey, octoally', 'hay octoally', 'hey, octo ally',
+      'hey octo alley', 'hey octo al', 'hey octoal',
     ],
   };
 
@@ -226,7 +226,7 @@ const state: SpeechState = {
   speaking: false,
   lastActivity: Date.now(),
   selectedDevice: undefined,
-  wakePhrase: cfg.wakePhrase || 'hey hivecommand',
+  wakePhrase: cfg.wakePhrase || 'hey octoally',
   wakeWordPhase: 'passive',
   activeTimeout: null,
 };
@@ -486,7 +486,7 @@ export function registerSpeechHandlers() {
           throw new Error(
             `Failed to auto-install whisper.cpp: ${e}. ` +
             'You can install manually: sudo apt install cmake g++ && ' +
-            'or place whisper-cli in ~/.hivecommand/bin/',
+            'or place whisper-cli in ~/.octoally/bin/',
           );
         }
       }

@@ -30,7 +30,7 @@ export function DesktopUpdateBanner({ active = true }: DesktopUpdateBannerProps)
     if (!active || dismissed) return;
     if (!isDesktop) return;
 
-    const sessionKey = 'hivecommand-desktop-update-checked';
+    const sessionKey = 'octoally-desktop-update-checked';
     if (sessionStorage.getItem(sessionKey)) return;
 
     let cancelled = false;

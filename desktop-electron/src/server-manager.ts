@@ -3,40 +3,40 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 
-/** Resolve the hivecommand CLI path (mirrors Rust logic in desktop/src/main.rs) */
+/** Resolve the octoally CLI path (mirrors Rust logic in desktop/src/main.rs) */
 export function resolveCliPath(): string {
   // Check the standard install path directly first
-  if (fs.existsSync('/usr/local/bin/hivecommand')) {
+  if (fs.existsSync('/usr/local/bin/octoally')) {
     // Resolve symlinks — use realpath (works on macOS + Linux) with readlink -f as fallback
     try {
-      const resolved = execFileSync('realpath', ['/usr/local/bin/hivecommand'], {
+      const resolved = execFileSync('realpath', ['/usr/local/bin/octoally'], {
         encoding: 'utf-8',
         timeout: 3000,
       }).trim();
       if (resolved && fs.existsSync(resolved)) return resolved;
     } catch {}
     try {
-      const resolved = execFileSync('readlink', ['-f', '/usr/local/bin/hivecommand'], {
+      const resolved = execFileSync('readlink', ['-f', '/usr/local/bin/octoally'], {
         encoding: 'utf-8',
         timeout: 3000,
       }).trim();
       if (resolved && fs.existsSync(resolved)) return resolved;
     } catch {}
-    return '/usr/local/bin/hivecommand';
+    return '/usr/local/bin/octoally';
   }
 
   // Fallback: check ~/.local/bin
   const home = process.env.HOME;
   if (home) {
-    const localPath = path.join(home, '.local/bin/hivecommand');
+    const localPath = path.join(home, '.local/bin/octoally');
     if (fs.existsSync(localPath)) return localPath;
   }
 
   // Last resort: rely on PATH
-  return 'hivecommand';
+  return 'octoally';
 }
 
-/** Check if HiveCommand server is currently running */
+/** Check if OctoAlly server is currently running */
 export function isServerRunning(cli: string): boolean {
   try {
     const stdout = execFileSync(cli, ['status'], {
@@ -107,13 +107,13 @@ export async function waitForServer(maxWaitMs = 10000): Promise<boolean> {
 /** Check if the systemd/launchd service is installed */
 export function isServiceInstalled(): boolean {
   if (process.platform === 'linux') {
-    return fs.existsSync('/etc/systemd/system/hivecommand.service');
+    return fs.existsSync('/etc/systemd/system/octoally.service');
   }
   if (process.platform === 'darwin') {
     const home = process.env.HOME;
     if (home) {
       return fs.existsSync(
-        path.join(home, 'Library/LaunchAgents/com.aigenius.hivecommand.plist'),
+        path.join(home, 'Library/LaunchAgents/com.aigenius.octoally.plist'),
       );
     }
   }

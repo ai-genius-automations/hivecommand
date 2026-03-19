@@ -58,7 +58,7 @@ interface PersistedState {
 let nextExplorerSeq = 1;
 
 function storageKey(projectId: string) {
-  return `hivecommand-project-${projectId}`;
+  return `octoally-project-${projectId}`;
 }
 
 function loadPersistedState(projectId: string): PersistedState | null {
@@ -87,7 +87,7 @@ export function cleanupProjectStorage(projectId: string) {
       const parsed = JSON.parse(raw);
       if (parsed?.explorerInstances) {
         for (const inst of parsed.explorerInstances) {
-          localStorage.removeItem(`hivecommand-explorer-${inst.id}`);
+          localStorage.removeItem(`octoally-explorer-${inst.id}`);
         }
       }
     }
@@ -162,11 +162,11 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
   const [expandedTerminalId, setExpandedTerminalId] = useState<string | null>(null);
   const [gridFocusedId, setGridFocusedId] = useState<string | null>(null);
   const [gridColumns, setGridColumns] = useState(() => {
-    const saved = localStorage.getItem(`hivecommand-project-grid-cols-${projectId}`);
+    const saved = localStorage.getItem(`octoally-project-grid-cols-${projectId}`);
     return saved ? Math.min(10, Math.max(1, parseInt(saved, 10) || 3)) : 3;
   });
   const [gridRows, setGridRows] = useState<number | 'auto'>(() => {
-    const saved = localStorage.getItem(`hivecommand-project-grid-rows-${projectId}`);
+    const saved = localStorage.getItem(`octoally-project-grid-rows-${projectId}`);
     if (!saved || saved === 'auto') return 'auto';
     return Math.min(6, Math.max(1, parseInt(saved, 10) || 2));
   });
@@ -321,7 +321,7 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
     // Voice command: refresh active terminal display
     if (focusSessionId === '__voice_refresh_tab') {
       if (activeTerminalId) {
-        window.dispatchEvent(new CustomEvent('hivecommand:refresh-terminal', {
+        window.dispatchEvent(new CustomEvent('octoally:refresh-terminal', {
           detail: { sessionId: activeTerminalId },
         }));
       }
@@ -713,7 +713,7 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
   // Focus a terminal's xterm textarea after switching views
   function focusTerminalById(sessionId: string) {
     setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('hivecommand:focus-terminal', {
+      window.dispatchEvent(new CustomEvent('octoally:focus-terminal', {
         detail: { sessionId },
       }));
     }, 100);
@@ -750,10 +750,10 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
 
   // Persist grid preferences
   useEffect(() => {
-    localStorage.setItem(`hivecommand-project-grid-cols-${projectId}`, String(gridColumns));
+    localStorage.setItem(`octoally-project-grid-cols-${projectId}`, String(gridColumns));
   }, [gridColumns, projectId]);
   useEffect(() => {
-    localStorage.setItem(`hivecommand-project-grid-rows-${projectId}`, String(gridRows));
+    localStorage.setItem(`octoally-project-grid-rows-${projectId}`, String(gridRows));
   }, [gridRows, projectId]);
 
   // Calculate grid card height
@@ -793,7 +793,7 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
     // Trigger refresh after layout is fully settled — same as clicking refresh button
     const t3 = setTimeout(() => {
       for (const term of terminalInstances) {
-        window.dispatchEvent(new CustomEvent('hivecommand:refresh-terminal', {
+        window.dispatchEvent(new CustomEvent('octoally:refresh-terminal', {
           detail: { sessionId: term.id },
         }));
       }
@@ -1055,7 +1055,7 @@ export function ProjectView({ projectId, projectPath, projectName: _projectName,
                         <div className="mx-3 my-1" style={{ height: 1, background: 'var(--border)' }} />
                       )}
 
-                      {/* External sessions (tmux sessions not tracked by HiveCommand) */}
+                      {/* External sessions (tmux sessions not tracked by OctoAlly) */}
                       <div
                         className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider"
                         style={{ color: 'var(--text-secondary)' }}

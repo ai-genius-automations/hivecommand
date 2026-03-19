@@ -43,7 +43,7 @@ export function createTray(opts: TrayOptions): Tray {
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('HiveCommand');
+  tray.setToolTip('OctoAlly');
 
   // Build initial menu (async — will set when ready)
   refreshMenu(opts);
@@ -71,7 +71,7 @@ async function refreshMenu(opts: TrayOptions) {
     cliManaged = isServerRunning(opts.cliPath);
     serviceInstalled = isServiceInstalled();
   } catch (err) {
-    console.warn('[HiveCommand] Tray menu status check failed:', err);
+    console.warn('[OctoAlly] Tray menu status check failed:', err);
   }
 
   let statusLabel = 'Status: Stopped';
@@ -128,10 +128,10 @@ async function refreshMenu(opts: TrayOptions) {
       click: async () => {
         if (!isServiceInstalled()) {
           if (cliManaged) {
-            console.log('[HiveCommand] Stopping CLI-managed server on quit...');
+            console.log('[OctoAlly] Stopping CLI-managed server on quit...');
             await stopServer(opts.cliPath);
           } else if (reachable) {
-            console.log('[HiveCommand] Stopping external server on quit...');
+            console.log('[OctoAlly] Stopping external server on quit...');
             await stopServerOnPort();
           }
         }

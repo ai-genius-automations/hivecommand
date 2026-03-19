@@ -1,6 +1,6 @@
 {
   "version": "1",
   "channel": "stable",
-  "name": "hivecommand",
-  "description": "HiveCommand orchestration dashboard"
+  "name": "octoally",
+  "description": "OctoAlly orchestration dashboard"
 }

@@ -109,7 +109,7 @@ function formatSize(bytes: number): string {
 }
 
 function explorerStorageKey(instanceId: string) {
-  return `hivecommand-explorer-${instanceId}`;
+  return `octoally-explorer-${instanceId}`;
 }
 
 function loadExplorerState(instanceId: string): PersistedExplorerState | null {

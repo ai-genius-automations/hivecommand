@@ -210,7 +210,7 @@ function ProjectForm({
       onSubmit();
       if (data.project?.id) {
         setTimeout(() => {
-          const openEvent = new CustomEvent('hivecommand:open-project', {
+          const openEvent = new CustomEvent('octoally:open-project', {
             detail: { id: data.project.id, name: data.project.name },
           });
           window.dispatchEvent(openEvent);
@@ -1209,8 +1209,8 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
       const detail = (e as CustomEvent).detail;
       if (detail?.id && detail?.name) onOpenProject(detail.id, detail.name);
     };
-    window.addEventListener('hivecommand:open-project', handler);
-    return () => window.removeEventListener('hivecommand:open-project', handler);
+    window.addEventListener('octoally:open-project', handler);
+    return () => window.removeEventListener('octoally:open-project', handler);
   }, [onOpenProject]);
 
   const { data: projectsData, isLoading: loadingProjects } = useQuery({

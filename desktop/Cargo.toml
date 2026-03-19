@@ -1,8 +1,8 @@
 [package]
-name = "hivecommand-desktop"
+name = "octoally-desktop"
 version = "0.1.0"
 edition = "2021"
-description = "HiveCommand desktop app with system tray"
+description = "OctoAlly desktop app with system tray"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }

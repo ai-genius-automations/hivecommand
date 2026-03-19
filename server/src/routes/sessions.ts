@@ -6,7 +6,7 @@ const { SerializeAddon } = require('@xterm/addon-serialize') as { SerializeAddon
 import { spawn } from 'child_process';
 import { platform } from 'os';
 import * as sessionManager from '../services/session-manager.js';
-import { RESIZE_MARKER, registerPendingSpawn } from '../services/session-manager.js';
+import { RESIZE_MARKER, registerPendingSpawn, getSessionTmuxServer } from '../services/session-manager.js';
 import { getTracker } from '../services/session-state.js';
 import { getDb } from '../db/index.js';
 
@@ -28,7 +28,7 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     return { sessions };
   });
 
-  // Adopt an external hivemind dtach session into HiveCommand
+  // Adopt an external hivemind dtach session into OctoAlly
   app.post<{
     Body: { socket_path: string; project_id?: string };
   }>('/sessions/adopt', async (req, reply) => {
@@ -130,7 +130,7 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
   // Concise context summary for cross-session awareness (low token cost)
   app.get('/context', async () => {
     const running = sessionManager.listSessions('running');
-    if (running.length === 0) return { active: false, summary: 'No active HiveCommand sessions.' };
+    if (running.length === 0) return { active: false, summary: 'No active OctoAlly sessions.' };
 
     const sessions = running.map(s => {
       const tracker = getTracker(s.id);
@@ -292,7 +292,8 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     if (socketPath) {
       attachCmd = `dtach -a ${socketPath} -Ez`;
     } else if (tmuxSession) {
-      attachCmd = `tmux -L hivecommand attach-session -t ${tmuxSession}`;
+      const tmuxServer = getSessionTmuxServer(req.params.id);
+      attachCmd = `tmux -L ${tmuxServer} attach-session -t ${tmuxSession}`;
     } else {
       return reply.status(400).send({ error: 'No dtach socket or tmux session found' });
     }
@@ -342,7 +343,7 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
           }
         });
 
-        // If no error within 300ms, assume it launched — release HiveCommand's hold
+        // If no error within 300ms, assume it launched — release OctoAlly's hold
         setTimeout(() => {
           if (failed || resolved) return;
           resolved = true;

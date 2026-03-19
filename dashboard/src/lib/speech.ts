@@ -131,7 +131,7 @@ export const useSpeechStore = create<SpeechStore>((set) => ({
   transcribing: false,
   lastTranscription: '',
   wakeWordPhase: null,
-  wakePhrase: 'hey hivecommand',
+  wakePhrase: 'hey octoally',
   dictationMode: false,
   commandModeActive: false,
   preDictationMode: 'off',

@@ -270,7 +270,7 @@ const BUILTIN_COMMANDS: VoiceCommand[] = [
   {
     id: 'dismiss-commands',
     name: 'Exit Command Mode',
-    triggerPhrases: ['stop hivecommand', 'bye hivecommand', 'dismiss', 'exit commands', 'goodbye hivecommand'],
+    triggerPhrases: ['stop octoally', 'bye octoally', 'dismiss', 'exit commands', 'goodbye octoally'],
     action: { kind: 'dismiss-commands' },
     type: 'builtin',
     enabled: true,

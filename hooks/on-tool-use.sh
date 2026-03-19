@@ -1,11 +1,11 @@
 #!/bin/bash
-# HiveCommand Claude Code Hook — fires on every tool use
+# OctoAlly Claude Code Hook — fires on every tool use
 # Install by adding to ~/.claude/settings.json hooks
 
-HIVECOMMAND_URL="${HIVECOMMAND_URL:-http://localhost:42010}"
+OCTOALLY_URL="${OCTOALLY_URL:-${HIVECOMMAND_URL:-http://localhost:42010}}"
 
-# Send event to HiveCommand (fire and forget, don't block Claude)
-curl -s -X POST "$HIVECOMMAND_URL/api/events" \
+# Send event to OctoAlly (fire and forget, don't block Claude)
+curl -s -X POST "$OCTOALLY_URL/api/events" \
   -H "Content-Type: application/json" \
   -d "{
     \"type\": \"tool_use\",

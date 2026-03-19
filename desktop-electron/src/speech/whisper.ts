@@ -21,7 +21,7 @@ export interface WhisperInstallProgress {
 }
 
 function whisperBinDir(): string {
-  return path.join(os.homedir(), '.hivecommand', 'bin');
+  return path.join(os.homedir(), '.octoally', 'bin');
 }
 
 function whisperBinPath(): string {
@@ -73,7 +73,7 @@ function checkBuildTools(): string[] {
 
 /**
  * Download whisper.cpp source and build from source.
- * Installs the binary to ~/.hivecommand/bin/whisper-cli.
+ * Installs the binary to ~/.octoally/bin/whisper-cli.
  */
 export async function installWhisperBinary(
   onProgress: (progress: WhisperInstallProgress) => void,
@@ -94,7 +94,7 @@ export async function installWhisperBinary(
     throw new Error(msg);
   }
 
-  const tmpDir = path.join(os.tmpdir(), `hivecommand-whisper-build-${Date.now()}`);
+  const tmpDir = path.join(os.tmpdir(), `octoally-whisper-build-${Date.now()}`);
   fs.mkdirSync(tmpDir, { recursive: true });
 
   const tarball = path.join(tmpDir, 'whisper.cpp.tar.gz');
@@ -157,7 +157,7 @@ export async function installWhisperBinary(
       throw new Error('Build succeeded but could not find whisper-cli binary');
     }
 
-    // Copy to ~/.hivecommand/bin/
+    // Copy to ~/.octoally/bin/
     fs.mkdirSync(whisperBinDir(), { recursive: true });
     fs.copyFileSync(builtBin, destBin);
     fs.chmodSync(destBin, 0o755);
@@ -253,7 +253,7 @@ export function transcribe(
   return new Promise((resolve, reject) => {
     // Write temp WAV file
     const tmpDir = os.tmpdir();
-    const tmpFile = path.join(tmpDir, `hivecommand-stt-${Date.now()}.wav`);
+    const tmpFile = path.join(tmpDir, `octoally-stt-${Date.now()}.wav`);
 
     try {
       fs.writeFileSync(tmpFile, createWavBuffer(samples));

@@ -223,7 +223,7 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
     // Make URLs in terminal output clickable — open in system browser
     term.loadAddon(new WebLinksAddon((event, url) => {
       event.preventDefault();
-      console.log('[hivecommand] Link clicked in terminal:', url);
+      console.log('[octoally] Link clicked in terminal:', url);
       // In Electron: use IPC to call shell.openExternal directly (avoids
       // xterm.js WebLinksAddon's window.open() which opens about:blank).
       // In browser: use server API to call xdg-open/open.
@@ -234,7 +234,7 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url }),
-        }).catch(e => console.error('[hivecommand] open-url failed:', e));
+        }).catch(e => console.error('[octoally] open-url failed:', e));
       }
     }));
 
@@ -669,8 +669,8 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
         w.send(JSON.stringify({ type: 'input', data }));
       }
     };
-    window.addEventListener('hivecommand:terminal-input', handler);
-    return () => window.removeEventListener('hivecommand:terminal-input', handler);
+    window.addEventListener('octoally:terminal-input', handler);
+    return () => window.removeEventListener('octoally:terminal-input', handler);
   }, [visible, suspended]);
 
   // Voice command: refresh terminal display
@@ -694,8 +694,8 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
         setTimeout(() => connectFnRef.current?.(), 50);
       }
     };
-    window.addEventListener('hivecommand:refresh-terminal', handler);
-    return () => window.removeEventListener('hivecommand:refresh-terminal', handler);
+    window.addEventListener('octoally:refresh-terminal', handler);
+    return () => window.removeEventListener('octoally:refresh-terminal', handler);
   }, [sessionId]);
 
   // Focus terminal on demand (e.g. switching from grid to single view)
@@ -709,8 +709,8 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
         term.focus();
       }
     };
-    window.addEventListener('hivecommand:focus-terminal', handler);
-    return () => window.removeEventListener('hivecommand:focus-terminal', handler);
+    window.addEventListener('octoally:focus-terminal', handler);
+    return () => window.removeEventListener('octoally:focus-terminal', handler);
   }, [sessionId]);
 
   return (

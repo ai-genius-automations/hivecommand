@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HiveCommand Release Script
+# OctoAlly Release Script
 #
 # Bumps version across all packages, commits, tags, and pushes to trigger
 # the GitHub Actions release workflow.
@@ -162,5 +162,5 @@ else
   git push origin "v${NEW_VERSION}"
   echo ""
   echo "✓ v${NEW_VERSION} released — GitHub Actions workflow triggered"
-  echo "  https://github.com/ai-genius-automations/hivecommand/actions"
+  echo "  https://github.com/ai-genius-automations/octoally/actions"
 fi

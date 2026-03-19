@@ -1,12 +1,12 @@
 {
-  "name": "hivecommand-desktop",
-  "version": "0.1.45-alpha",
-  "description": "HiveCommand Desktop App",
+  "name": "octoally-desktop",
+  "version": "0.1.44-alpha",
+  "description": "OctoAlly Desktop App",
   "author": {
     "name": "AI Genius Automations",
     "email": "support@aigeniusautomations.com"
   },
-  "homepage": "https://github.com/ai-genius-automations/hivecommand",
+  "homepage": "https://github.com/ai-genius-automations/octoally",
   "license": "Apache-2.0 WITH Commons-Clause",
   "main": "dist/main.js",
   "scripts": {
@@ -19,8 +19,8 @@
     "dist:win": "npm run build && electron-builder --win"
   },
   "build": {
-    "appId": "com.aigenius.hivecommand",
-    "productName": "HiveCommand",
+    "appId": "com.aigenius.octoally",
+    "productName": "OctoAlly",
     "directories": {
       "output": "release"
     },
@@ -36,7 +36,7 @@
       ],
       "category": "Development",
       "icon": "icons",
-      "executableName": "hivecommand-desktop"
+      "executableName": "octoally-desktop"
     },
     "mac": {
       "target": [
