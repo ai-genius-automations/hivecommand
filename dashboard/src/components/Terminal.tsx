@@ -3,7 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Mic, MicOff, Loader2, RotateCcw, ExternalLink } from 'lucide-react';
+import { Mic, MicOff, Loader2, RotateCcw, ExternalLink, ScrollText } from 'lucide-react';
 import { useSpeechStore, toggleMic, stopMic } from '../lib/speech';
 import { api } from '../lib/api';
 import { HistoryViewer } from './HistoryViewer';
@@ -719,6 +719,14 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
         {connected && !suspended && (
           <>
             <TerminalMicButton wsRef={wsRef} termRef={termRef} />
+            <button
+              onClick={() => setShowHistory(true)}
+              className="flex items-center gap-1 px-1.5 py-1 rounded text-xs transition-all opacity-70 hover:!opacity-100"
+              style={{ background: 'var(--accent)', color: 'white' }}
+              title="View full session history"
+            >
+              <ScrollText className="w-3 h-3" />
+            </button>
             <button
               onClick={async () => {
                 try {
