@@ -414,9 +414,8 @@ function Dashboard() {
         style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}
       >
         <div className="flex items-center gap-2">
-          <img src="/octoally-icon.png" alt="" className="w-5 h-5" />
-          <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            OctoAlly
+          <h1 className="text-base font-bold">
+            <span style={{ color: '#ef4444' }}>Octo</span><span style={{ color: 'var(--text-primary)' }}>Ally</span>
           </h1>
           <div className="flex items-center gap-1">
             {desktopVersion && (

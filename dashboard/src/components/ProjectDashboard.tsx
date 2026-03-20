@@ -1297,6 +1297,15 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [splashDone, setSplashDone] = useState(false);
+  const [splashFading, setSplashFading] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setSplashFading(true), 2500);
+    const t2 = setTimeout(() => setSplashDone(true), 3200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
   const deleteProjectMutation = useMutation({
     mutationFn: (id: string) => api.projects.delete(id),
     onSuccess: () => {
@@ -1331,50 +1340,125 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Projects
-            </h2>
-            <button
-              onClick={() => {
-                setRefreshing(true);
-                // Invalidate all queries - don't await so fast ones resolve immediately
-                Promise.all([
-                  queryClient.invalidateQueries({ queryKey: ['projects'] }),
-                  queryClient.invalidateQueries({ queryKey: ['sessions'] }),
-                  queryClient.invalidateQueries({ queryKey: ['git-status'] }),
-                  queryClient.invalidateQueries({ queryKey: ['ruflo-status'] }),
-                  queryClient.invalidateQueries({ queryKey: ['devcortex-status'] }),
-                ]).finally(() => {
-                  setLastRefreshed(new Date());
-                  setRefreshing(false);
-                });
-              }}
-              title="Refresh project data"
-              className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors"
-              style={{ color: 'var(--text-secondary)', background: 'transparent' }}
+    <div className="h-full flex flex-col">
+      {/* Splash screen */}
+      {!splashDone && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center transition-opacity duration-600"
+          style={{
+            background: 'var(--bg-primary)',
+            opacity: splashFading ? 0 : 1,
+            pointerEvents: splashFading ? 'none' : 'auto',
+          }}
+        >
+          <img src="/octoally-icon.png" alt="" className="w-56 h-56 object-contain mb-4" />
+          <h2 className="text-2xl font-bold">
+            <span style={{ color: '#ef4444' }}>Octo</span><span style={{ color: 'var(--text-primary)' }}>Ally</span>
+          </h2>
+          <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>Work smarter with more arms</p>
+        </div>
+      )}
+
+      {/* About modal */}
+      {showAbout && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.7)' }}
+          onClick={() => setShowAbout(false)}
+        >
+          <div
+            className="rounded-2xl border p-10 flex flex-col items-center"
+            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img src="/octoally-logo-lg.png" alt="OctoAlly" className="mb-6" style={{ width: '32rem', height: 'auto' }} />
+            <a
+              href="https://octoally.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm mb-2 hover:underline"
+              style={{ color: 'var(--accent)' }}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-              <span style={{ color: 'var(--text-tertiary)' }}>
-                {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
+              https://octoally.com
+            </a>
+            <a
+              href="https://github.com/ai-genius-automations/octoally"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm mb-6 hover:underline"
+              style={{ color: 'var(--accent)' }}
+            >
+              GitHub
+            </a>
+            <button
+              onClick={() => setShowAbout(false)}
+              className="px-4 py-2 rounded-lg text-sm mb-4"
+              style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+            >
+              Close
+            </button>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              &copy; {new Date().getFullYear()}{' '}
+              <a href="https://aigeniusautomations.com" target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: 'var(--accent)' }}>
+                AIGeniusAutomations
+              </a>
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto w-full flex flex-col h-full" style={{ maxWidth: '82rem' }}>
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 px-6 pt-6 pb-4" style={{ background: 'var(--bg-primary)' }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img
+                src="/octoally-icon.png"
+                alt=""
+                className="w-9 h-9 object-contain cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => setShowAbout(true)}
+                title="About OctoAlly"
+              />
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Projects
+              </h2>
+              <button
+                onClick={() => {
+                  setRefreshing(true);
+                  Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ['projects'] }),
+                    queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+                    queryClient.invalidateQueries({ queryKey: ['git-status'] }),
+                    queryClient.invalidateQueries({ queryKey: ['ruflo-status'] }),
+                    queryClient.invalidateQueries({ queryKey: ['devcortex-status'] }),
+                  ]).finally(() => {
+                    setLastRefreshed(new Date());
+                    setRefreshing(false);
+                  });
+                }}
+                title="Refresh project data"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors"
+                style={{ color: 'var(--text-secondary)', background: 'transparent' }}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </button>
+            </div>
+            <button
+              onClick={() => setView({ mode: 'add' })}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ background: 'var(--accent)', color: 'white' }}
+            >
+              <Plus className="w-4 h-4" />
+              Add Project
             </button>
           </div>
-          <button
-            onClick={() => setView({ mode: 'add' })}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
-            style={{ background: 'var(--accent)', color: 'white' }}
-          >
-            <Plus className="w-4 h-4" />
-            Add Project
-          </button>
         </div>
 
-        {/* Project cards grid */}
+        {/* Scrollable project cards grid */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
         {loadingProjects ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent)' }} />
@@ -1529,7 +1613,7 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
                       <GitInfoBadge projectPath={project.path} />
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-1.5 mt-auto pt-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 mt-auto pt-1" onClick={(e) => e.stopPropagation()}>
                       {/* Quick-launch buttons */}
                       <button
                         onClick={() => onOpenProject(project.id, project.name, 'hivemind')}
@@ -1637,6 +1721,7 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
             })()}
           </div>
         )}
+        </div>
       </div>
 
       {confirmDeleteId && (

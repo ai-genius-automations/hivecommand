@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="dashboard/public/octoally-logo-lg.png" alt="OctoAlly" width="377" height="256">
+  <img src="dashboard/public/octoally-logo-lg.png" alt="OctoAlly" width="500">
   <br>
   <img alt="OctoAlly" src="docs/octoally-title.svg" height="56">
   <p align="center">

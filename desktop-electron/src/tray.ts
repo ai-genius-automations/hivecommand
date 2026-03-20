@@ -36,7 +36,7 @@ export function createTray(opts: TrayOptions): Tray {
     try {
       const img = nativeImage.createFromPath(p);
       if (!img.isEmpty()) {
-        icon = img.resize({ width: 22, height: 22 });
+        icon = img.resize({ width: 32, height: 32 });
         break;
       }
     } catch {}
