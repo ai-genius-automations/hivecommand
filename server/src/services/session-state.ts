@@ -192,7 +192,7 @@ export class SessionStateTracker {
         .filter((f): f is NonNullable<typeof f> => f !== null)
         // Only files created/modified after this session started
         .filter(f => f.ctime >= this._createdAt - 5000)
-        .sort((a, b) => b.mtime - a.mtime);
+        .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
 
       if (files.length > 0) {
         this._jsonl.setFile(files[0].path);

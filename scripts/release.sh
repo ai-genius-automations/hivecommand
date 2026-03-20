@@ -120,7 +120,23 @@ fi
 echo "Bumping versions..."
 for f in "${VERSION_FILES[@]}"; do
   if [ -f "$f" ]; then
-    sed -i "s/$CURRENT/$NEW_VERSION/g" "$f"
+    if [[ "$f" == *lock* ]]; then
+      # For lockfiles: only update the top-level "version" field (not dependency versions)
+      python3 -c "
+import json, sys
+with open('$f') as fh:
+    data = json.load(fh)
+data['version'] = '$NEW_VERSION'
+if '' in data.get('packages', {}):
+    data['packages']['']['version'] = '$NEW_VERSION'
+with open('$f', 'w') as fh:
+    json.dump(data, fh, indent=2)
+    fh.write('\n')
+"
+    else
+      # For package.json: safe to replace version string (only appears once)
+      sed -i "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW_VERSION\"/" "$f"
+    fi
     echo "  ✓ $f"
   fi
 done
