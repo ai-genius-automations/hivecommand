@@ -339,12 +339,133 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       ? { cmd: 'bash', args: (sub: string[]) => [RUFLO_RUN, ...sub] }
       : { cmd: npx, args: (sub: string[]) => ['ruflo@latest', ...sub] };
     try {
-      // Use --dual to set up both Claude (CLAUDE.md) and Codex (AGENTS.md) config
-      const result = await execFileAsync(rufloArgs.cmd, rufloArgs.args(['init', '--force', '--dual']), opts);
+      // Use --force (Claude-only) to get the full detailed CLAUDE.md config.
+      // We create AGENTS.md separately below — using --dual would overwrite
+      // CLAUDE.md with a generic stub that loses project-specific config.
+      const result = await execFileAsync(rufloArgs.cmd, rufloArgs.args(['init', '--force']), opts);
       output.push('[ruflo init] ' + (result.stdout || 'done'));
     } catch (err: any) {
       output.push('[error] ' + (err.message || String(err)));
       return reply.status(500).send({ ok: false, output: output.join('\n'), error: err.message });
+    }
+
+    // Create AGENTS.md for Codex support if it doesn't exist
+    const agentsMdPath = join(project.path, 'AGENTS.md');
+    if (!existsSync(agentsMdPath)) {
+      try {
+        const projectName = project.name || 'project';
+        const agentsMdContent = `# ${projectName}
+
+> Multi-agent orchestration framework for agentic coding
+
+## Project Overview
+
+A Claude Flow powered project
+
+**Tech Stack**: TypeScript, Node.js
+**Architecture**: Domain-Driven Design with bounded contexts
+
+## Quick Start
+
+### Installation
+\`\`\`bash
+npm install
+\`\`\`
+
+### Build
+\`\`\`bash
+npm run build
+\`\`\`
+
+### Test
+\`\`\`bash
+npm test
+\`\`\`
+
+## Agent Coordination
+
+### Swarm Configuration
+
+This project uses hierarchical swarm coordination for complex tasks:
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| Topology | \`hierarchical\` | Queen-led coordination (anti-drift) |
+| Max Agents | 8 | Optimal team size |
+| Strategy | \`specialized\` | Clear role boundaries |
+| Consensus | \`raft\` | Leader-based consistency |
+
+### Available Skills
+
+Use \`$skill-name\` syntax to invoke:
+
+| Skill | Use Case |
+|-------|----------|
+| \`$swarm-orchestration\` | Multi-agent task coordination |
+| \`$memory-management\` | Pattern storage and retrieval |
+| \`$sparc-methodology\` | Structured development workflow |
+| \`$security-audit\` | Security scanning and CVE detection |
+
+### Agent Types
+
+| Type | Role | Use Case |
+|------|------|----------|
+| \`researcher\` | Requirements analysis | Understanding scope |
+| \`architect\` | System design | Planning structure |
+| \`coder\` | Implementation | Writing code |
+| \`tester\` | Test creation | Quality assurance |
+| \`reviewer\` | Code review | Security and quality |
+
+## Code Standards
+
+### File Organization
+- **NEVER** save to root folder
+- \`/src\` - Source code files
+- \`/tests\` - Test files
+- \`/docs\` - Documentation
+- \`/config\` - Configuration files
+
+### Quality Rules
+- Files under 500 lines
+- No hardcoded secrets
+- Input validation at boundaries
+- Typed interfaces for public APIs
+
+## Security
+
+- NEVER commit secrets, credentials, or .env files
+- NEVER hardcode API keys
+- Always validate user input
+
+## Memory System
+
+### Storing Patterns
+\`\`\`bash
+npx @claude-flow/cli memory store \\
+  --key "pattern-name" \\
+  --value "pattern description" \\
+  --namespace patterns
+\`\`\`
+
+### Searching Memory
+\`\`\`bash
+npx @claude-flow/cli memory search \\
+  --query "search terms" \\
+  --namespace patterns
+\`\`\`
+
+## Links
+
+- Documentation: https://github.com/ruvnet/claude-flow
+- Issues: https://github.com/ruvnet/claude-flow/issues
+`;
+        writeFileSync(agentsMdPath, agentsMdContent, 'utf-8');
+        output.push('[codex] Created AGENTS.md for Codex support');
+      } catch (err: any) {
+        output.push('[codex] Failed to create AGENTS.md: ' + (err.message || 'unknown'));
+      }
+    } else {
+      output.push('[codex] AGENTS.md already exists — skipping');
     }
 
     // Initialize hive-mind (sequential — ruflo already cached from init above)
