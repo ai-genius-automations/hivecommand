@@ -143,31 +143,33 @@ function runInstallOrUpdate(version) {
   try { execSync(`ln -sf "${LOCAL_CLI}" "${binDir}/octoally"`, { stdio: "pipe" }); } catch {}
 
   // Desktop app: install/update .deb if available (Linux only)
-  try {
+  if (process.platform === "linux") {
     const debUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/octoally-desktop_${version}_amd64.deb`;
     const debFile = `/tmp/octoally-desktop_${version}_amd64.deb`;
-    // Check if .deb exists on the release
-    execSync(`curl -fsSL --head "${debUrl}" 2>/dev/null | head -1 | grep -q "200"`, { stdio: "pipe" });
-    // Kill old desktop app if running
     try {
-      execSync('pkill -9 -f "octoally-desktop"', { stdio: "pipe" });
-      for (let i = 0; i < 10; i++) {
-        try { execSync('pgrep -f "octoally-desktop"', { stdio: "pipe" }); } catch { break; }
-        execSync("sleep 0.5", { stdio: "pipe" });
-      }
-    } catch {}
-    log(CYAN, "Installing desktop app...");
-    execSync(`curl -fsSL -o "${debFile}" "${debUrl}"`, { stdio: "pipe" });
-    execSync(`sudo dpkg -i "${debFile}"`, { stdio: "inherit" });
-    execSync(`rm -f "${debFile}"`, { stdio: "pipe" });
-    log(GREEN, "Desktop app installed!");
-    // Launch desktop app
-    try {
-      const desktop = spawn("octoally-desktop", [], { stdio: "ignore", detached: true });
-      desktop.unref();
-    } catch {}
-  } catch {
-    // .deb not available or dpkg failed — skip desktop app
+      // Kill old desktop app if running
+      try {
+        execSync('pkill -9 -f "octoally-desktop"', { stdio: "pipe" });
+        for (let i = 0; i < 10; i++) {
+          try { execSync('pgrep -f "octoally-desktop"', { stdio: "pipe" }); } catch { break; }
+          execSync("sleep 0.5", { stdio: "pipe" });
+        }
+      } catch {}
+      // Download .deb (follows redirects)
+      log(CYAN, "Downloading desktop app...");
+      execSync(`curl -fSL -o "${debFile}" "${debUrl}"`, { stdio: "inherit" });
+      log(CYAN, "Installing desktop app...");
+      execSync(`sudo dpkg -i "${debFile}"`, { stdio: "inherit" });
+      execSync(`rm -f "${debFile}"`, { stdio: "pipe" });
+      log(GREEN, "Desktop app installed!");
+      // Launch desktop app
+      try {
+        const desktop = spawn("octoally-desktop", [], { stdio: "ignore", detached: true });
+        desktop.unref();
+      } catch {}
+    } catch {
+      log(YELLOW, "Desktop app install skipped (download failed or dpkg unavailable)");
+    }
   }
 
   // Start server
