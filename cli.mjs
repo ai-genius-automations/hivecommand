@@ -239,5 +239,20 @@ if (!isInstalled()) {
     }
   }
 
+  // Launch desktop app if installed and not running
+  if (process.platform === "linux" && (!args.length || args[0] === "start")) {
+    try {
+      execSync('pgrep -f "octoally-desktop"', { stdio: "pipe" });
+      // Already running — do nothing
+    } catch {
+      // Not running — try to launch if installed
+      try {
+        execSync("command -v octoally-desktop", { stdio: "pipe" });
+        const desktop = spawn("octoally-desktop", [], { stdio: "ignore", detached: true });
+        desktop.unref();
+      } catch {}
+    }
+  }
+
   launch(args.length ? args : ["start"]);
 }
