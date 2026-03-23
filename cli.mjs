@@ -204,33 +204,6 @@ function runInstallOrUpdate(version) {
   log(CYAN, "Starting server...");
   execSync(`"${LOCAL_CLI}" start`, { cwd: INSTALL_DIR, stdio: "inherit" });
 
-  // Update ALL npx cache entries for octoally with the current cli.mjs + package.json.
-  // npx uses different cache hashes for `npx octoally` vs `npx octoally@latest`.
-  // We update both so neither goes stale.
-  try {
-    const cacheDir = join(homedir(), ".npm", "_npx");
-    if (existsSync(cacheDir)) {
-      const thisDir = dirname(fileURLToPath(import.meta.url));
-      const thisPkg = join(thisDir, "package.json");
-      const thisCli = join(thisDir, "cli.mjs");
-      // Find all package.json files mentioning octoally anywhere in the npx cache
-      const entries = execSync(`find "${cacheDir}" -name "package.json" -exec grep -l "octoally" {} \\;`, {
-        encoding: "utf8", stdio: ["pipe", "pipe", "pipe"],
-      }).trim().split("\n").filter(Boolean);
-      for (const pkg of entries) {
-        // Only update package.json files inside node_modules/octoally/ (not the top-level ones)
-        if (!pkg.includes("node_modules/octoally/")) continue;
-        const cachedDir = dirname(pkg);
-        try {
-          execSync(`cp "${thisPkg}" "${pkg}"`, { stdio: "pipe" });
-          if (existsSync(join(cachedDir, "cli.mjs"))) {
-            execSync(`cp "${thisCli}" "${cachedDir}/cli.mjs"`, { stdio: "pipe" });
-          }
-        } catch {}
-      }
-    }
-  } catch {}
-
   log(GREEN, `OctoAlly v${version} installed!`);
 }
 
