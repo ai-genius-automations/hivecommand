@@ -204,24 +204,29 @@ function runInstallOrUpdate(version) {
   log(CYAN, "Starting server...");
   execSync(`"${LOCAL_CLI}" start`, { cwd: INSTALL_DIR, stdio: "inherit" });
 
-  // Remove stale npx cache entries for octoally so `npx octoally` fetches the new version.
-  // We keep the currently-running instance's cache (it already has the right version).
+  // Update ALL npx cache entries for octoally with the current cli.mjs + package.json.
+  // npx uses different cache hashes for `npx octoally` vs `npx octoally@latest`.
+  // We update both so neither goes stale.
   try {
     const cacheDir = join(homedir(), ".npm", "_npx");
-    const thisDir = dirname(fileURLToPath(import.meta.url));
     if (existsSync(cacheDir)) {
-      const entries = execSync(`find "${cacheDir}" -maxdepth 2 -name "package.json" -exec grep -l "octoally" {} \\;`, {
+      const thisDir = dirname(fileURLToPath(import.meta.url));
+      const thisPkg = join(thisDir, "package.json");
+      const thisCli = join(thisDir, "cli.mjs");
+      // Find all package.json files mentioning octoally anywhere in the npx cache
+      const entries = execSync(`find "${cacheDir}" -name "package.json" -exec grep -l "octoally" {} \\;`, {
         encoding: "utf8", stdio: ["pipe", "pipe", "pipe"],
       }).trim().split("\n").filter(Boolean);
       for (const pkg of entries) {
-        // Resolve the npx hash dir (e.g., ~/.npm/_npx/<hash>/)
-        // pkg is like ~/.npm/_npx/<hash>/node_modules/octoally/package.json or ~/.npm/_npx/<hash>/package.json
-        let hashDir = pkg;
-        while (hashDir && dirname(hashDir) !== cacheDir) hashDir = dirname(hashDir);
-        if (!hashDir || hashDir === cacheDir) continue;
-        // Don't delete the cache entry we're currently running from
-        if (thisDir.startsWith(hashDir)) continue;
-        try { execSync(`rm -rf "${hashDir}"`, { stdio: "pipe" }); } catch {}
+        // Only update package.json files inside node_modules/octoally/ (not the top-level ones)
+        if (!pkg.includes("node_modules/octoally/")) continue;
+        const cachedDir = dirname(pkg);
+        try {
+          execSync(`cp "${thisPkg}" "${pkg}"`, { stdio: "pipe" });
+          if (existsSync(join(cachedDir, "cli.mjs"))) {
+            execSync(`cp "${thisCli}" "${cachedDir}/cli.mjs"`, { stdio: "pipe" });
+          }
+        } catch {}
       }
     }
   } catch {}
