@@ -4,7 +4,7 @@
     <strong>AI Coding Session Orchestration Dashboard</strong>
   </p>
   <p align="center">
-    The dashboard for Claude Code. Launch, monitor, and manage AI coding sessions<br>
+    The dashboard for Claude Code &amp; OpenAI Codex. Launch, monitor, and manage AI coding sessions<br>
     with <a href="https://github.com/ruvnet/ruflo">RuFlo</a> multi-agent orchestration — all from one place.
   </p>
 </p>
@@ -18,7 +18,7 @@
 
 ---
 
-> **OctoAlly** is a local-first orchestration dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [RuFlo](https://github.com/ruvnet/ruflo). Run multi-agent hive-mind sessions, single-agent workflows, and interactive terminals — all from a beautiful web UI with real-time streaming.
+> **OctoAlly** is a local-first orchestration dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenAI Codex](https://github.com/openai/codex), and [RuFlo](https://github.com/ruvnet/ruflo). Run multi-agent hive-mind sessions, single-agent workflows, and interactive terminals — with both Claude and Codex CLIs — all from a beautiful web UI with real-time streaming.
 
 ---
 
@@ -59,14 +59,16 @@
 - **Pop out & adopt back** — Open any session in your system terminal (`tmux attach`), work with your favorite tools, then bring it back into the dashboard. No lock-in.
 - **Voice dictation** — Speak your instructions using local Whisper STT (no cloud, no data leaves your machine) or cloud APIs like OpenAI/Groq. API keys are encrypted at rest with AES-256-GCM.
 - **Per-project agents** — Define custom agent personas in `.claude/agents/*.md` and launch them from the dashboard. Each project gets its own RuFlo config and agent definitions.
+- **Dual CLI support** — Launch sessions with either Claude Code or OpenAI Codex. Each session tracks which CLI it uses, with branded icons and separate configuration.
 
 ---
 
 ## Features
 
 - **Active Sessions Grid** — See every running session across all projects in a live-updating grid with real-time streaming output
-- **Hive-Mind Sessions** — Launch multi-agent Claude Code orchestration via [RuFlo](https://github.com/ruvnet/ruflo) with shared memory and consensus
-- **Agent Sessions** — Run single-agent sessions with custom agent definitions (`.claude/agents/*.md`)
+- **Hive-Mind Sessions** — Launch multi-agent orchestration via [RuFlo](https://github.com/ruvnet/ruflo) with shared memory and consensus — supports both Claude Code and Codex
+- **Agent Sessions** — Run single-agent sessions with Claude Code (`.claude/agents/*.md`) or Codex
+- **Dual CLI Support** — Switch between Claude Code and OpenAI Codex per-session with branded icons, separate commands, and per-CLI settings
 - **Interactive Terminals** — Full terminal sessions with tmux persistence — pop out to system terminal and adopt back anytime
 - **Built-in Web Browser** — Browse and test web apps alongside your coding sessions with full OAuth support
 - **Git Source Control** — Side-by-side diffs, staged changes, commit history, and file explorer — review and commit AI-generated changes in-app
@@ -93,12 +95,18 @@
 | Requirement | Why | Install |
 |-------------|-----|---------|
 | **Node.js 20+** | Runtime for the server | [nodejs.org](https://nodejs.org) |
-| **Claude Code** | AI coding agent | `npm install -g @anthropic-ai/claude-code` |
+| **Claude Code** | Anthropic's AI coding agent | `npm install -g @anthropic-ai/claude-code` |
+| **Codex CLI** *(optional)* | OpenAI's AI coding agent | `npm install -g @openai/codex` |
 
 > **Important:** Before installing OctoAlly, you must run Claude Code at least once to accept terms and enable non-interactive mode:
 > ```bash
 > claude                              # Accept terms & sign in
 > claude --dangerously-skip-permissions  # Enable non-interactive agent sessions
+> ```
+>
+> For Codex support, also run:
+> ```bash
+> codex                               # Accept terms & sign in
 > ```
 
 ### One-Line Install
@@ -146,13 +154,14 @@ cd server && npm start
 
 ## How It Works
 
-OctoAlly is a dashboard that sits on top of **Claude Code** and **RuFlo**:
+OctoAlly is a dashboard that sits on top of **Claude Code**, **OpenAI Codex**, and **RuFlo**:
 
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** is Anthropic's CLI agent for coding tasks
-- **[RuFlo](https://github.com/ruvnet/ruflo)** adds multi-agent orchestration, hive-mind coordination, and memory to Claude Code
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** is Anthropic's CLI agent for coding tasks (uses `CLAUDE.md` for project instructions)
+- **[OpenAI Codex](https://github.com/openai/codex)** is OpenAI's CLI agent for coding tasks (uses `AGENTS.md` for project instructions)
+- **[RuFlo](https://github.com/ruvnet/ruflo)** adds multi-agent orchestration, hive-mind coordination, and memory to both CLIs
 - **OctoAlly** provides the UI to manage projects, launch sessions, and monitor everything in real-time
 
-When you add a project and enable RuFlo, OctoAlly automatically initializes the project with agent definitions, hive-mind support, and the configuration files Claude Code needs. You then launch sessions directly from the dashboard.
+When you add a project and enable RuFlo, OctoAlly automatically initializes the project with agent definitions, hive-mind support, and the configuration files both CLIs need (`CLAUDE.md` + `AGENTS.md`). You can then launch sessions with either Claude or Codex directly from the dashboard — each session tracks which CLI is running, with branded icons and per-CLI settings.
 
 ---
 
