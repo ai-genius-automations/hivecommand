@@ -110,21 +110,15 @@
 > codex                               # Accept terms & sign in
 > ```
 
-### One-Line Install
+### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ai-genius-automations/octoally/main/scripts/install.sh | bash
+npx octoally
 ```
 
-The installer will:
-1. Check for Node.js and Claude Code (offer to install if missing)
-2. Verify Claude Code has been initialized
-3. Download and extract the pre-built release
-4. Install the `octoally` CLI
-5. Start the server
-6. Optionally install the desktop app
+This will clone the repo, install dependencies, build, and start the server. On subsequent runs it proxies to the local CLI.
 
-> **Custom install location:** `OCTOALLY_INSTALL_DIR=/opt/octoally bash install.sh`
+> **Custom install location:** `OCTOALLY_INSTALL_DIR=/opt/octoally npx octoally`
 
 ### What you get
 
