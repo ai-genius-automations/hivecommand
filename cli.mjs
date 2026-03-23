@@ -90,8 +90,21 @@ function runInstallOrUpdate(version) {
   log(CYAN, `Downloading v${version}...`);
   execSync(`curl -fsSL -o "${tmpFile}" "${tarballUrl}"`, { stdio: "inherit" });
 
-  // Stop server if running
-  if (existsSync(LOCAL_CLI)) {
+  // Stop server if running (detect service vs PID)
+  let serviceType = null; // "systemd", "launchd", or null (PID-based)
+  if (process.platform === "linux") {
+    try { execSync("systemctl is-active --quiet octoally", { stdio: "pipe" }); serviceType = "systemd"; } catch {}
+  } else if (process.platform === "darwin") {
+    try { execSync("launchctl list com.aigenius.octoally", { stdio: "pipe" }); serviceType = "launchd"; } catch {}
+  }
+
+  if (serviceType === "systemd") {
+    log(CYAN, "Stopping systemd service...");
+    try { execSync("sudo systemctl stop octoally", { stdio: "inherit" }); } catch {}
+  } else if (serviceType === "launchd") {
+    log(CYAN, "Stopping launchd service...");
+    try { execSync("launchctl stop com.aigenius.octoally", { stdio: "pipe" }); } catch {}
+  } else if (existsSync(LOCAL_CLI)) {
     try { execSync(`"${LOCAL_CLI}" stop`, { cwd: INSTALL_DIR, stdio: "pipe" }); } catch {}
   }
 
@@ -200,9 +213,17 @@ function runInstallOrUpdate(version) {
     }
   }
 
-  // Start server
-  log(CYAN, "Starting server...");
-  execSync(`"${LOCAL_CLI}" start`, { cwd: INSTALL_DIR, stdio: "inherit" });
+  // Start server (match how it was stopped)
+  if (serviceType === "systemd") {
+    log(CYAN, "Starting systemd service...");
+    execSync("sudo systemctl start octoally", { stdio: "inherit" });
+  } else if (serviceType === "launchd") {
+    log(CYAN, "Starting launchd service...");
+    try { execSync("launchctl start com.aigenius.octoally", { stdio: "pipe" }); } catch {}
+  } else {
+    log(CYAN, "Starting server...");
+    execSync(`"${LOCAL_CLI}" start`, { cwd: INSTALL_DIR, stdio: "inherit" });
+  }
 
   log(GREEN, `OctoAlly v${version} installed!`);
 }
