@@ -568,17 +568,27 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
         termRef.current.reset();
         connectFnRef.current();
         // For Codex: raw replay buffer contains garbled chunks from different widths.
-        // After reconnect settles, trigger a capture-pane refresh for clean display.
+        // After reconnect settles, refit to current container width, send resize
+        // to the server (tmux pane may be at a different width from Active Sessions
+        // grid), then trigger a capture-pane refresh for clean display.
         // Use debounced timer so visible effect's refresh doesn't stack with this one.
         if (cliType === 'codex') {
           if (codexRefreshTimer.current) clearTimeout(codexRefreshTimer.current);
           codexRefreshTimer.current = setTimeout(() => {
             codexRefreshTimer.current = null;
             const term = termRef.current;
+            const fit = fitRef.current;
             const w = wsRef.current;
             if (term && w && w.readyState === WebSocket.OPEN) {
-              term.reset();
-              w.send(JSON.stringify({ type: 'refresh' }));
+              if (fit) fit.fit();
+              w.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+              // Allow tmux + Codex to reflow at new width before capturing
+              setTimeout(() => {
+                if (w.readyState === WebSocket.OPEN) {
+                  term.reset();
+                  w.send(JSON.stringify({ type: 'refresh' }));
+                }
+              }, 300);
             }
           }, 500);
         }
@@ -730,8 +740,15 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
         disconnectFnRef.current?.();
         setTimeout(() => connectFnRef.current?.(), 50);
       } else if (cliType === 'codex') {
-        term.reset();
-        w.send(JSON.stringify({ type: 'refresh' }));
+        // Send resize first — tmux pane may be at wrong width (e.g. from
+        // Active Sessions grid). Then let Codex reflow before capturing.
+        w.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        setTimeout(() => {
+          if (w.readyState === WebSocket.OPEN) {
+            term.reset();
+            w.send(JSON.stringify({ type: 'refresh' }));
+          }
+        }, 300);
       } else if (hideCursorRef.current) {
         const cols = term.cols;
         const rows = term.rows;
