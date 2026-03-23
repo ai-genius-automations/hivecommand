@@ -142,12 +142,11 @@ function runInstallOrUpdate(version) {
   execSync(`mkdir -p "${binDir}"`, { stdio: "pipe" });
   try { execSync(`ln -sf "${LOCAL_CLI}" "${binDir}/octoally"`, { stdio: "pipe" }); } catch {}
 
-  // Desktop app: install/update .deb if available (Linux only)
+  // Desktop app: install/update if available
   if (process.platform === "linux") {
     const debUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/octoally-desktop_${version}_amd64.deb`;
     const debFile = `/tmp/octoally-desktop_${version}_amd64.deb`;
     try {
-      // Kill old desktop app if running
       try {
         execSync('pkill -9 -f "octoally-desktop"', { stdio: "pipe" });
         for (let i = 0; i < 10; i++) {
@@ -155,20 +154,49 @@ function runInstallOrUpdate(version) {
           execSync("sleep 0.5", { stdio: "pipe" });
         }
       } catch {}
-      // Download .deb (follows redirects)
       log(CYAN, "Downloading desktop app...");
       execSync(`curl -fSL -o "${debFile}" "${debUrl}"`, { stdio: "inherit" });
       log(CYAN, "Installing desktop app...");
       execSync(`sudo dpkg -i "${debFile}"`, { stdio: "inherit" });
       execSync(`rm -f "${debFile}"`, { stdio: "pipe" });
       log(GREEN, "Desktop app installed!");
-      // Launch desktop app
       try {
         const desktop = spawn("octoally-desktop", [], { stdio: "ignore", detached: true });
         desktop.unref();
       } catch {}
     } catch {
-      log(YELLOW, "Desktop app install skipped (download failed or dpkg unavailable)");
+      log(YELLOW, "Desktop app install skipped (download failed or unavailable)");
+    }
+  } else if (process.platform === "darwin") {
+    // macOS: download .dmg, mount, copy .app to /Applications
+    const arch = execSync("uname -m", { encoding: "utf8" }).trim();
+    const dmgName = arch === "arm64" ? `OctoAlly-${version}-arm64.dmg` : `OctoAlly-${version}.dmg`;
+    const dmgUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/${dmgName}`;
+    const dmgFile = `/tmp/${dmgName}`;
+    try {
+      // Kill old app
+      try { execSync('pkill -9 -f "OctoAlly"', { stdio: "pipe" }); } catch {}
+      log(CYAN, "Downloading desktop app...");
+      execSync(`curl -fSL -o "${dmgFile}" "${dmgUrl}"`, { stdio: "inherit" });
+      log(CYAN, "Installing desktop app...");
+      // Mount DMG, find .app, copy to /Applications (matches install.sh)
+      const plistOut = execSync(`hdiutil attach "${dmgFile}" -nobrowse -plist`, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+      const mountMatch = plistOut.match(/<key>mount-point<\/key>\s*<string>([^<]+)<\/string>/);
+      if (mountMatch) {
+        const mountDir = mountMatch[1];
+        const appPath = execSync(`find "${mountDir}" -maxdepth 1 -name "*.app" -type d | head -1`, { encoding: "utf8" }).trim();
+        if (appPath) {
+          const appName = appPath.split("/").pop();
+          execSync(`rm -rf "/Applications/${appName}" 2>/dev/null || true`, { stdio: "pipe" });
+          execSync(`cp -R "${appPath}" /Applications/`, { stdio: "pipe" });
+          log(GREEN, "Desktop app installed!");
+        }
+        execSync(`hdiutil detach "${mountDir}" -quiet`, { stdio: "pipe" });
+      }
+      execSync(`rm -f "${dmgFile}"`, { stdio: "pipe" });
+      try { execSync('open -a OctoAlly', { stdio: "pipe" }); } catch {}
+    } catch {
+      log(YELLOW, "Desktop app install skipped (download failed or unavailable)");
     }
   }
 
@@ -240,32 +268,36 @@ if (!isInstalled()) {
   }
 
   // Launch desktop app if installed and not running
-  if (process.platform === "linux" && (!args.length || args[0] === "start")) {
+  if (!args.length || args[0] === "start") {
     let desktopRunning = false;
-    try {
-      execSync('pgrep -f "octoally-desktop"', { stdio: "pipe" });
-      desktopRunning = true;
-    } catch {}
+    if (process.platform === "linux") {
+      try { execSync('pgrep -f "octoally-desktop"', { stdio: "pipe" }); desktopRunning = true; } catch {}
+    } else if (process.platform === "darwin") {
+      try { execSync('pgrep -f "OctoAlly"', { stdio: "pipe" }); desktopRunning = true; } catch {}
+    }
 
     if (!desktopRunning) {
-      // Find desktop binary
-      let desktopBin = null;
-      try {
-        desktopBin = execSync("which octoally-desktop 2>/dev/null", { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
-      } catch {}
-      if (!desktopBin) {
-        desktopBin = ["/usr/bin/octoally-desktop", "/opt/OctoAlly/octoally-desktop"]
-          .find((p) => existsSync(p)) || null;
-      }
-
-      if (desktopBin) {
-        log(CYAN, "Launching desktop app...");
+      if (process.platform === "linux") {
+        let desktopBin = null;
         try {
-          const desktop = spawn(desktopBin, [], { stdio: "ignore", detached: true });
-          desktop.unref();
-        } catch (err) {
-          log(YELLOW, `Desktop app launch failed: ${err.message}`);
+          desktopBin = execSync("which octoally-desktop 2>/dev/null", { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+        } catch {}
+        if (!desktopBin) {
+          desktopBin = ["/usr/bin/octoally-desktop", "/opt/OctoAlly/octoally-desktop"]
+            .find((p) => existsSync(p)) || null;
         }
+        if (desktopBin) {
+          log(CYAN, "Launching desktop app...");
+          try {
+            const desktop = spawn(desktopBin, [], { stdio: "ignore", detached: true });
+            desktop.unref();
+          } catch (err) {
+            log(YELLOW, `Desktop app launch failed: ${err.message}`);
+          }
+        }
+      } else if (process.platform === "darwin" && existsSync("/Applications/OctoAlly.app")) {
+        log(CYAN, "Launching desktop app...");
+        try { execSync('open -a OctoAlly', { stdio: "pipe" }); } catch {}
       }
     }
   }
