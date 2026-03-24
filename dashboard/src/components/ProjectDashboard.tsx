@@ -1500,9 +1500,9 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
         </div>
       )}
 
-      <div className="mx-auto w-full flex flex-col h-full" style={{ maxWidth: '82rem' }}>
+      <div className="w-full flex-1 overflow-y-auto" style={{ scrollbarGutter: 'stable' }}>
         {/* Sticky Header */}
-        <div className="sticky top-0 z-10 px-6 pt-6 pb-4" style={{ background: 'var(--bg-primary)' }}>
+        <div className="sticky top-0 z-10 px-6 pt-6 pb-4 mx-auto w-full" style={{ background: 'var(--bg-primary)', maxWidth: '82rem' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
@@ -1577,8 +1577,9 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
           </div>
         </div>
 
-        {/* Scrollable project cards grid */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        {/* Project cards grid */}
+        <div className="pb-6">
+        <div className="mx-auto px-6" style={{ maxWidth: '82rem' }}>
         {loadingProjects ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent)' }} />
@@ -1873,6 +1874,7 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
             })()}
           </div>
         )}
+        </div>
         </div>
       </div>
 
