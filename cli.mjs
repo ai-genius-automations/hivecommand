@@ -105,7 +105,17 @@ function runInstallOrUpdate(version) {
     log(CYAN, "Stopping launchd service...");
     try { execSync("launchctl stop com.aigenius.octoally", { stdio: "pipe" }); } catch {}
   } else if (existsSync(LOCAL_CLI)) {
-    try { execSync(`"${LOCAL_CLI}" stop`, { cwd: INSTALL_DIR, stdio: "pipe" }); } catch {}
+    log(CYAN, "Stopping server...");
+    try { execSync(`"${LOCAL_CLI}" stop`, { cwd: INSTALL_DIR, stdio: "inherit" }); } catch {}
+  }
+
+  // Also kill server by PID file as a fallback (CLI stop may not work if binary is stale)
+  const pidFile = join(INSTALL_DIR, ".octoally.pid");
+  if (existsSync(pidFile)) {
+    try {
+      const pid = readFileSync(pidFile, "utf8").trim();
+      if (pid) execSync(`kill ${pid} 2>/dev/null || true`, { stdio: "pipe" });
+    } catch {}
   }
 
   // Extract
@@ -173,10 +183,6 @@ function runInstallOrUpdate(version) {
       execSync(`sudo dpkg -i "${debFile}"`, { stdio: "inherit" });
       execSync(`rm -f "${debFile}"`, { stdio: "pipe" });
       log(GREEN, "Desktop app installed!");
-      try {
-        const desktop = spawn("octoally-desktop", [], { stdio: "ignore", detached: true });
-        desktop.unref();
-      } catch {}
     } catch {
       log(YELLOW, "Desktop app install skipped (download failed or unavailable)");
     }
@@ -207,13 +213,16 @@ function runInstallOrUpdate(version) {
         execSync(`hdiutil detach "${mountDir}" -quiet`, { stdio: "pipe" });
       }
       execSync(`rm -f "${dmgFile}"`, { stdio: "pipe" });
-      try { execSync('open -a OctoAlly', { stdio: "pipe" }); } catch {}
     } catch {
       log(YELLOW, "Desktop app install skipped (download failed or unavailable)");
     }
   }
 
   // Start server (match how it was stopped)
+  // Re-resolve CLI path since install dir was replaced
+  const newCli = join(INSTALL_DIR, "bin", "octoally");
+  execSync(`chmod +x "${newCli}"`, { stdio: "pipe" });
+
   if (serviceType === "systemd") {
     log(CYAN, "Starting systemd service...");
     execSync("sudo systemctl start octoally", { stdio: "inherit" });
@@ -222,10 +231,45 @@ function runInstallOrUpdate(version) {
     try { execSync("launchctl start com.aigenius.octoally", { stdio: "pipe" }); } catch {}
   } else {
     log(CYAN, "Starting server...");
-    execSync(`"${LOCAL_CLI}" start`, { cwd: INSTALL_DIR, stdio: "inherit" });
+    execSync(`"${newCli}" start`, { cwd: INSTALL_DIR, stdio: "inherit" });
   }
 
+  // Verify server is actually running
+  try {
+    const status = execSync(`"${newCli}" status`, { cwd: INSTALL_DIR, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+    if (status.includes("stopped")) {
+      log(YELLOW, "Server didn't stay running — retrying...");
+      execSync(`"${newCli}" start`, { cwd: INSTALL_DIR, stdio: "inherit" });
+    }
+  } catch {}
+
   log(GREEN, `OctoAlly v${version} installed!`);
+
+  // Launch desktop app (single instance)
+  if (process.platform === "linux") {
+    let desktopRunning = false;
+    try { execSync('pgrep -f "[o]ctoally-desktop"', { stdio: "pipe" }); desktopRunning = true; } catch {}
+    if (!desktopRunning) {
+      const desktopBin = ["/usr/bin/octoally-desktop", "/opt/OctoAlly/octoally-desktop"]
+        .find((p) => existsSync(p));
+      if (desktopBin) {
+        log(CYAN, "Launching desktop app...");
+        const desktop = spawn(desktopBin, [], {
+          stdio: "ignore",
+          detached: true,
+          env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0" },
+        });
+        desktop.unref();
+      }
+    }
+  } else if (process.platform === "darwin") {
+    let desktopRunning = false;
+    try { execSync('pgrep -f "[O]ctoAlly"', { stdio: "pipe" }); desktopRunning = true; } catch {}
+    if (!desktopRunning && existsSync("/Applications/OctoAlly.app")) {
+      log(CYAN, "Launching desktop app...");
+      try { execSync('open -a OctoAlly', { stdio: "pipe" }); } catch {}
+    }
+  }
 }
 
 function launch(args) {
@@ -288,7 +332,7 @@ if (!isInstalled()) {
     }
   }
 
-  // Launch desktop app if installed and not running
+  // Launch desktop app if installed and not running (non-update path)
   if (!args.length || args[0] === "start") {
     if (process.platform === "linux") {
       let desktopRunning = false;
