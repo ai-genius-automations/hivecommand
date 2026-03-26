@@ -649,6 +649,36 @@ npx @claude-flow/cli memory search \\
       } catch { /* non-fatal */ }
     }
 
+    // Ensure Stop/SessionEnd hooks have timeouts (ruflo session-end hangs without them)
+    try {
+      const sp = join(project.path, '.claude', 'settings.json');
+      if (existsSync(sp)) {
+        const raw = readFileSync(sp, 'utf-8');
+        let parsed: any;
+        try { parsed = JSON.parse(raw); } catch { parsed = null; }
+        if (parsed?.hooks) {
+          let changed = false;
+          for (const key of ['Stop', 'SessionEnd', 'SubagentStop']) {
+            const entries = parsed.hooks[key];
+            if (!Array.isArray(entries)) continue;
+            for (const entry of entries) {
+              if (!Array.isArray(entry.hooks)) continue;
+              for (const h of entry.hooks) {
+                if (h.type === 'command' && !h.timeout) {
+                  h.timeout = 5000;
+                  changed = true;
+                }
+              }
+            }
+          }
+          if (changed) {
+            writeFileSync(sp, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+            output.push('[hooks] Added timeouts to Stop/SessionEnd hooks');
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+
     // Patch SONA trajectory learning into ruflo hooks (version-gated, idempotent)
     if (HAS_SONA_PATCH) {
       try {
