@@ -597,15 +597,19 @@ npx @claude-flow/cli memory search \\
         } catch { /* non-fatal */ }
       }
       // Patch settings.json hook commands that call stale npx packages
+      // No quotes — already inside JSON string values
       const settingsJsonPath = join(project.path, '.claude', 'settings.json');
       try {
         if (existsSync(settingsJsonPath)) {
           const content = readFileSync(settingsJsonPath, 'utf-8');
           if (staleNpxCheck(content)) {
-            const fixed = content.replace(staleNpxPattern, `"${localRuflo}"`);
-            if (fixed !== content) {
+            const fixed = content.replace(staleNpxPattern, localRuflo);
+            try {
+              JSON.parse(fixed);
               writeFileSync(settingsJsonPath, fixed, 'utf-8');
               output.push('[hooks] Migrated settings.json hook commands to local ruflo');
+            } catch {
+              output.push('[hooks] Skipped settings.json — replacement would produce invalid JSON');
             }
           }
         }

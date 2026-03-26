@@ -130,15 +130,32 @@ async function start() {
         }
 
         // 2. Patch settings.json hook commands that call stale npx packages directly
+        // No quotes around the path — it's already inside a JSON string value
         const settingsPath = join(projectPath, '.claude', 'settings.json');
         try {
           if (existsSync(settingsPath)) {
-            const content = readFileSync(settingsPath, 'utf-8');
+            let content = readFileSync(settingsPath, 'utf-8');
+            // Repair damage from v1.0.51 which inserted literal quotes inside JSON strings:
+            //   "command": ""/path/to/ruflo" hooks ..."  →  "command": "/path/to/ruflo hooks ..."
+            // Match: ""/path/ruflo"  (spurious quote before path, spurious quote after .bin/ruflo")
+            const badQuotePattern = /""([^"]*\/\.bin\/ruflo)"/g;
+            if (badQuotePattern.test(content)) {
+              content = content.replace(badQuotePattern, '"$1');
+              try {
+                JSON.parse(content);
+                writeFileSync(settingsPath, content, 'utf-8');
+                migrated++;
+                console.log(`  [hook-migration] Repaired malformed JSON in ${settingsPath}`);
+              } catch { /* still broken, skip */ }
+            }
             if (staleNpxCheck(content)) {
-              const fixed = content.replace(staleNpxPattern, `"${localRuflo}"`);
-              if (fixed !== content) {
+              const fixed = content.replace(staleNpxPattern, localRuflo);
+              try {
+                JSON.parse(fixed);
                 writeFileSync(settingsPath, fixed, 'utf-8');
                 migrated++;
+              } catch {
+                console.error(`  [hook-migration] Skipped ${settingsPath} — replacement would produce invalid JSON`);
               }
             }
           }
