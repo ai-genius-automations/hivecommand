@@ -58,26 +58,35 @@ async function start() {
   // Clear timing log for fresh run
   try { writeFileSync('/tmp/octoally-timing.log', ''); } catch {}
 
-  // Clean npx caches that contain stale agentdb v2 (causes session-end hangs).
-  // Only deletes caches where agentdb is a standalone dep (v2 era) — once a user
-  // gets a fresh cache with agentdb bundled inside ruflo, this is a no-op.
+  // Clean stale agentdb v2 from all locations. agentdb 2.x has keepalive timers
+  // that prevent ruflo hooks from exiting, hanging session-end indefinitely.
+  // agentdb is now bundled inside ruflo — standalone copies are always stale.
   try {
+    let cleaned = 0;
+    // 1. Remove standalone agentdb from the shared ruflo install
+    const rufloAgentdbPaths = [
+      join(homedir(), '.octoally', 'ruflo', 'node_modules', 'agentdb'),
+      join(homedir(), '.hivecommand', 'ruflo', 'node_modules', 'agentdb'),
+    ];
+    for (const p of rufloAgentdbPaths) {
+      if (existsSync(p)) {
+        try { rmSync(p, { recursive: true, force: true }); cleaned++; } catch {}
+      }
+    }
+    // 2. Remove stale npx caches with @claude-flow/cli that have standalone agentdb
     const npxDir = join(homedir(), '.npm', '_npx');
     if (existsSync(npxDir)) {
-      let cleaned = 0;
       for (const entry of readdirSync(npxDir)) {
         const cacheDir = join(npxDir, entry);
         const cfPkg = join(cacheDir, 'node_modules', '@claude-flow', 'cli', 'package.json');
         if (!existsSync(cfPkg)) continue;
-        // Only nuke if this cache has a standalone agentdb (the stale v2 dep).
-        // Fresh caches bundle agentdb inside ruflo — no standalone agentdb dir.
         const staleAgentdb = join(cacheDir, 'node_modules', 'agentdb');
         if (existsSync(staleAgentdb)) {
           try { rmSync(cacheDir, { recursive: true, force: true }); cleaned++; } catch {}
         }
       }
-      if (cleaned > 0) console.log(`  Cleaned ${cleaned} stale @claude-flow/cli npx cache(s) with agentdb v2`);
     }
+    if (cleaned > 0) console.log(`  Cleaned ${cleaned} stale agentdb location(s)`);
   } catch { /* non-fatal */ }
 
   // Initialize database, load projects from user config, and clean up orphaned sessions

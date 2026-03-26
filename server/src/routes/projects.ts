@@ -409,6 +409,39 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       for (const b of backed) output.push(`  → ${b}`);
     }
 
+    // Clean stale transitive deps from the shared ruflo install before running init.
+    // agentdb 2.x has keepalive timers that prevent ruflo hooks from exiting.
+    // agentdb is now bundled inside ruflo — standalone copies are always stale.
+    const rufloDir = join(homedir(), '.octoally', 'ruflo');
+    const staleAgentdbPaths = [
+      join(rufloDir, 'node_modules', 'agentdb'),
+      join(homedir(), '.hivecommand', 'ruflo', 'node_modules', 'agentdb'),
+    ];
+    for (const p of staleAgentdbPaths) {
+      if (existsSync(p)) {
+        try {
+          const { rm } = await import('fs/promises');
+          await rm(p, { recursive: true, force: true });
+          output.push(`[cleanup] Removed stale agentdb from ${p}`);
+        } catch { /* non-fatal */ }
+      }
+    }
+    // Also clean stale npx caches with @claude-flow/cli (old package name)
+    try {
+      const npxDir = join(homedir(), '.npm', '_npx');
+      if (existsSync(npxDir)) {
+        const { readdirSync: readNpxDir } = await import('fs');
+        const { rm } = await import('fs/promises');
+        for (const entry of readNpxDir(npxDir)) {
+          const cfPkg = join(npxDir, entry, 'node_modules', '@claude-flow', 'cli', 'package.json');
+          if (existsSync(cfPkg)) {
+            await rm(join(npxDir, entry), { recursive: true, force: true });
+            output.push(`[cleanup] Removed stale @claude-flow/cli npx cache`);
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+
     // Run each step sequentially to avoid parallel npx downloads OOM on low-memory machines
     // Use shared ruflo-run.sh if available (fast), otherwise fall back to npx
     const rufloArgs = HAS_RUFLO_RUN
