@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "octoally",
+  "project_id": "67e593cf-3c6b-46d4-baba-b84e39ace008"
+}
