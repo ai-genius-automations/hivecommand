@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # Build the server + dashboard archive (platform-independent)
+  build-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            dashboard/package-lock.json
+
+      - name: Build release archive
+        run: bash scripts/build-archive.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-archive
+          path: octoally-v*.tar.gz
+
+  # Build Electron desktop app for Linux
+  build-desktop-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-electron/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop-electron
+        run: npm ci
+
+      - name: Build & package
+        working-directory: desktop-electron
+        run: npm run dist:linux
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: |
+            desktop-electron/release/*.deb
+            desktop-electron/release/*.AppImage
+
+  # Build Electron desktop app for macOS
+  build-desktop-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-electron/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop-electron
+        run: npm ci
+
+      - name: Build & package
+        working-directory: desktop-electron
+        run: npm run dist:mac
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: desktop-electron/release/*.dmg
+
+  # Create GitHub Release with all assets
+  release:
+    needs: [build-server, build-desktop-linux, build-desktop-macos]
+    if: always() && needs.build-server.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: List assets
+        run: find release-assets -type f | sort
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          # Mark as pre-release if tag contains alpha/beta/rc
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          files: |
+            release-assets/server-archive/*.tar.gz
+            release-assets/desktop-linux/*.deb
+            release-assets/desktop-linux/*.AppImage
+            release-assets/desktop-macos/*.dmg
+          fail_on_unmatched_files: false
+
+      # Publish to npm using granular access token
+      - name: Publish to npm
+        if: vars.NPM_PUBLISH == 'true'
+        run: |
+          npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          npm publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+

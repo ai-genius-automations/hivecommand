@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "channel": "stable",
+  "name": "octoally",
+  "description": "OctoAlly orchestration dashboard"
+}

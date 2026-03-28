@@ -1,0 +1,145 @@
+name: Test macOS Hook Fix
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'OctoAlly version to test (e.g. 1.0.55 or latest)'
+        required: false
+        default: 'latest'
+      ruflo_version:
+        description: 'Ruflo version to test (e.g. 3.5.42 or latest)'
+        required: false
+        default: 'latest'
+
+jobs:
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Install coreutils (for gtimeout)
+        run: brew install coreutils
+
+      - name: Install OctoAlly
+        run: |
+          npx -y octoally@${{ github.event.inputs.version }} &
+          INSTALL_PID=$!
+          sleep 45
+          kill $INSTALL_PID 2>/dev/null || true
+
+      - name: Check OctoAlly version
+        run: |
+          grep '"version"' ~/octoally/server/package.json | head -1
+          ls ~/octoally/server/dist/index.js 2>/dev/null && echo "Server dist: YES" || echo "Server dist: NO"
+
+      - name: Install ruflo
+        run: |
+          RUFLO_VER="${{ github.event.inputs.ruflo_version }}"
+          echo "Installing ruflo@${RUFLO_VER}"
+          mkdir -p ~/.octoally/ruflo && cd ~/.octoally/ruflo
+          npm init -y --silent 2>/dev/null
+          npm install "ruflo@${RUFLO_VER}" --save 2>&1 | tail -3
+          grep '"version"' node_modules/ruflo/package.json | head -1
+          ls -la node_modules/.bin/ruflo
+
+      - name: Setup test project with ruflo init
+        run: |
+          mkdir -p ~/test-project && cd ~/test-project
+          ~/.octoally/ruflo/node_modules/.bin/ruflo init --force 2>&1 | tail -5 || true
+          echo "=== Stop hooks AFTER ruflo init ==="
+          python3 -c "
+          import json
+          with open('.claude/settings.json') as f:
+              s = json.load(f)
+          for key in ['Stop','SessionEnd']:
+              for e in s.get('hooks',{}).get(key,[]):
+                  for h in e.get('hooks',[]):
+                      print(f'  [{key}] timeout={h.get(\"timeout\",\"NONE\")} cmd={h.get(\"command\",\"\")[:80]}')" || echo "parse failed"
+
+      - name: Simulate broken state (remove timeouts from Stop hooks)
+        run: |
+          cd ~/test-project
+          echo "=== Simulating broken user state: removing timeouts from Stop hooks ==="
+          python3 -c "
+          import json
+          with open('.claude/settings.json') as f:
+              s = json.load(f)
+          for key in ['Stop','SessionEnd']:
+              for e in s.get('hooks',{}).get(key,[]):
+                  for h in e.get('hooks',[]):
+                      if 'timeout' in h:
+                          del h['timeout']
+                          print(f'  Removed timeout from [{key}] {h.get(\"command\",\"\")[:60]}')
+          # Also inject the old npx claude-flow@alpha command (like Noah's machine)
+          s['hooks']['Stop'].insert(0, {
+              'hooks': [{
+                  'type': 'command',
+                  'command': 'npx claude-flow@alpha hooks session-end --generate-summary true --persist-state true --export-metrics true'
+              }]
+          })
+          print('  Injected stale npx claude-flow@alpha Stop hook (no timeout)')
+          with open('.claude/settings.json', 'w') as f:
+              json.dump(s, f, indent=2)
+              f.write('\n')
+          print('  Saved broken settings.json')" || echo "simulate failed"
+          echo "=== Stop hooks AFTER breaking ==="
+          python3 -c "
+          import json
+          with open('.claude/settings.json') as f:
+              s = json.load(f)
+          for key in ['Stop','SessionEnd']:
+              for e in s.get('hooks',{}).get(key,[]):
+                  for h in e.get('hooks',[]):
+                      print(f'  [{key}] timeout={h.get(\"timeout\",\"NONE\")} cmd={h.get(\"command\",\"\")[:80]}')" || echo "parse failed"
+
+      - name: Run OctoAlly server startup migration
+        run: |
+          cd ~/octoally/server
+          echo "=== Adding test project to DB ==="
+          node -e "const D=require('better-sqlite3'),p=require('path'),o=require('os');try{const d=new D(p.join(o.homedir(),'.octoally','octoally.db'));d.exec('CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT,path TEXT,description TEXT,ruflo_prompt TEXT,openclaw_prompt TEXT,default_web_url TEXT,created_at TEXT,updated_at TEXT)');d.prepare('INSERT OR IGNORE INTO projects(id,name,path)VALUES(?,?,?)').run('t1','test',p.join(o.homedir(),'test-project'));d.close();console.log('DB ready')}catch(e){console.error(e.message)}"
+          echo "=== Server startup (10s) ==="
+          gtimeout 10 node dist/index.js 2>&1 || true
+
+      - name: Verify migration results
+        run: |
+          cd ~/test-project
+          echo "=== Stop hooks AFTER migration ==="
+          python3 -c "
+          import json
+          with open('.claude/settings.json') as f:
+              s = json.load(f)
+          all_ok = True
+          for key in ['Stop','SessionEnd']:
+              for e in s.get('hooks',{}).get(key,[]):
+                  for h in e.get('hooks',[]):
+                      t = h.get('timeout', 'NONE')
+                      cmd = h.get('command','')[:80]
+                      has_npx = 'npx' in h.get('command','')
+                      print(f'  [{key}] timeout={t} npx={has_npx} cmd={cmd}')
+                      if t == 'NONE':
+                          print(f'    FAIL: Missing timeout!')
+                          all_ok = False
+                      if has_npx:
+                          print(f'    FAIL: Still has npx command!')
+                          all_ok = False
+          if all_ok:
+              print('')
+              print('ALL CHECKS PASSED')
+          else:
+              print('')
+              print('SOME CHECKS FAILED')
+              exit(1)" || echo "VERIFICATION FAILED"
+
+      - name: Test session-end with timeout enforcement
+        run: |
+          cd ~/test-project
+          RUFLO=~/.octoally/ruflo/node_modules/.bin/ruflo
+          echo "=== Testing ruflo hooks session-end (5s timeout like our migration sets) ==="
+          START=$(date +%s)
+          gtimeout 5 "$RUFLO" hooks session-end --generate-summary true 2>&1 || true
+          END=$(date +%s)
+          ELAPSED=$((END - START))
+          echo "Elapsed: ${ELAPSED}s"
+          if [ $ELAPSED -ge 5 ]; then
+            echo "CONFIRMED: ruflo hangs (killed after ${ELAPSED}s) but timeout prevents user-visible hang"
+          else
+            echo "ruflo exited cleanly in ${ELAPSED}s"
+          fi
