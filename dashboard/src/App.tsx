@@ -7,9 +7,10 @@ import { getPendingTerminalCount, onTerminalConnectionChange } from './component
 import { ProjectDashboard } from './components/ProjectDashboard';
 import { ProjectView, cleanupProjectStorage } from './components/ProjectView';
 import { X, LayoutGrid, FolderOpen, Monitor, Loader2, Settings, ArrowUpCircle } from 'lucide-react';
-import { isDesktop, getDesktopVersion } from './lib/tauri';
+import { isDesktop, isElectron, getDesktopVersion } from './lib/tauri';
 import { AgentGuideButton } from './components/AgentGuide';
 import { CloseTabModal } from './components/CloseTabModal';
+import { CloseAppModal } from './components/CloseAppModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ActiveTerminals } from './components/ActiveTerminals';
 import { GlobalMicButton } from './components/GlobalMicButton';
@@ -213,6 +214,16 @@ function Dashboard() {
   ).length;
   const [showActiveTerminals, setShowActiveTerminals] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCloseApp, setShowCloseApp] = useState(false);
+
+  // Listen for close dialog request from Electron main process
+  useEffect(() => {
+    if (!isElectron) return;
+    const unlisten = (window as any).electronAPI.on('show-close-dialog', () => {
+      setShowCloseApp(true);
+    });
+    return () => unlisten?.();
+  }, []);
 
   const dismissActiveTerminals = useCallback(() => {
     setShowActiveTerminals(false);
@@ -696,6 +707,16 @@ function Dashboard() {
 
       <ModelDownloadModal />
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showCloseApp && (
+        <CloseAppModal
+          onChoice={(choice, remember) => {
+            setShowCloseApp(false);
+            if (choice !== 'cancel') {
+              (window as any).electronAPI.invoke('close-dialog-response', choice, remember);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

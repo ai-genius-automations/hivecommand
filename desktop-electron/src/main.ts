@@ -1,9 +1,10 @@
 import { app, BrowserWindow, Menu, shell, ipcMain, session, globalShortcut, dialog } from 'electron';
 import * as path from 'path';
 import * as http from 'http';
-import { resolveCliPath, isServerReachable, startServer, waitForServer } from './server-manager';
+import { resolveCliPath, isServerReachable, startServer, waitForServer, stopServer, stopServerOnPort, isServerRunning, isServiceInstalled } from './server-manager';
 import { createTray, destroyTray } from './tray';
 import { registerSpeechHandlers } from './speech';
+import { readDesktopSettings, writeDesktopSetting } from './desktop-settings';
 
 let mainWindow: BrowserWindow | null = null;
 const cliPath = resolveCliPath();
@@ -127,7 +128,7 @@ function createWindow() {
     }
   });
 
-  // On close: ask user whether to minimize to tray or quit
+  // On close: minimize to tray, quit, or ask — based on saved preference
   mainWindow.on('close', (event) => {
     if ((app as any).isQuitting) {
       // Force quit after 2s if renderer doesn't cooperate
@@ -137,25 +138,34 @@ function createWindow() {
 
     event.preventDefault();
 
-    const choice = dialog.showMessageBoxSync(mainWindow!, {
-      type: 'question',
-      buttons: ['Minimize to Tray', 'Quit', 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-      title: 'OctoAlly',
-      message: 'What would you like to do?',
-      detail: 'Minimize to tray keeps the server running in the background.',
-    });
-
-    if (choice === 0) {
-      // Minimize to tray
+    const saved = readDesktopSettings().closeBehavior;
+    if (saved === 'minimize') {
       mainWindow?.hide();
-    } else if (choice === 1) {
-      // Quit
+      return;
+    }
+    if (saved === 'quit') {
       (app as any).isQuitting = true;
       app.quit();
+      return;
     }
-    // choice === 2 (Cancel): do nothing
+    if (saved === 'quit-all') {
+      // Stop server then quit
+      (async () => {
+        if (!isServiceInstalled()) {
+          if (isServerRunning(cliPath)) {
+            await stopServer(cliPath);
+          } else {
+            await stopServerOnPort();
+          }
+        }
+        (app as any).isQuitting = true;
+        app.quit();
+      })();
+      return;
+    }
+
+    // 'ask' or unset — send to renderer to show custom in-app modal
+    mainWindow?.webContents.send('show-close-dialog');
   });
 }
 
@@ -181,6 +191,30 @@ app.whenReady().then(async () => {
     if (url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
       shell.openExternal(url);
     }
+  });
+  // Handle close dialog response from renderer
+  ipcMain.handle('close-dialog-response', async (_event, choice: 'minimize' | 'quit' | 'quit-all' | 'cancel', remember: boolean) => {
+    if (choice === 'minimize') {
+      if (remember) writeDesktopSetting('closeBehavior', 'minimize');
+      mainWindow?.hide();
+    } else if (choice === 'quit') {
+      if (remember) writeDesktopSetting('closeBehavior', 'quit');
+      (app as any).isQuitting = true;
+      app.quit();
+    } else if (choice === 'quit-all') {
+      if (remember) writeDesktopSetting('closeBehavior', 'quit-all');
+      // Stop the server before quitting
+      if (!isServiceInstalled()) {
+        if (isServerRunning(cliPath)) {
+          await stopServer(cliPath);
+        } else {
+          await stopServerOnPort();
+        }
+      }
+      (app as any).isQuitting = true;
+      app.quit();
+    }
+    // 'cancel': do nothing
   });
   registerSpeechHandlers();
 

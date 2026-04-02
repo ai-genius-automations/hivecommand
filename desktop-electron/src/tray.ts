@@ -1,5 +1,6 @@
 import {
   app,
+  BrowserWindow,
   Tray,
   Menu,
   nativeImage,
@@ -16,6 +17,7 @@ import {
   toggleService,
   waitForServer,
 } from './server-manager';
+import { writeDesktopSetting } from './desktop-settings';
 
 let tray: Tray | null = null;
 
@@ -126,6 +128,18 @@ async function refreshMenu(opts: TrayOptions) {
       click: async () => {
         await toggleService(opts.cliPath);
         refreshMenu(opts);
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Close Behavior...',
+      sublabel: 'Choose what happens when you close the window',
+      click: () => {
+        writeDesktopSetting('closeBehavior', 'ask');
+        // Show the window and immediately open the close dialog
+        opts.showWindow();
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win) win.webContents.send('show-close-dialog');
       },
     },
     { type: 'separator' },
