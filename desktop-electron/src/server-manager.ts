@@ -2,6 +2,7 @@ import { execFile, execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import * as os from 'os';
 
 /** Resolve the octoally CLI path (mirrors Rust logic in desktop/src/main.rs) */
 export function resolveCliPath(): string {
@@ -67,10 +68,89 @@ export function isServerReachable(): Promise<boolean> {
   });
 }
 
+/**
+ * Build a PATH that includes node binary directories that may not be present
+ * when the app is launched from a desktop environment (e.g. task manager, dock).
+ * Interactive shells load nvm/fnm/volta via .bashrc/.zshrc, but desktop-launched
+ * processes inherit the bare session environment which typically lacks these.
+ *
+ * NOTE: duplicated from server/src/utils/enrich-path.ts because Electron and
+ * the server are separate build targets that cannot share modules at runtime.
+ */
+function buildNodeAwarePath(): string {
+  const currentPath = process.env.PATH || '';
+  const home = os.homedir();
+  const extraDirs: string[] = [];
+
+  // nvm: scan for the highest installed node version
+  const nvmDir = process.env.NVM_DIR || path.join(home, '.nvm');
+  const nvmVersionsDir = path.join(nvmDir, 'versions', 'node');
+  if (fs.existsSync(nvmVersionsDir)) {
+    try {
+      const versions = fs.readdirSync(nvmVersionsDir)
+        .filter((d) => d.startsWith('v'))
+        .sort((a, b) => {
+          const pa = a.slice(1).split('.').map(Number);
+          const pb = b.slice(1).split('.').map(Number);
+          for (let i = 0; i < 3; i++) {
+            if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+          }
+          return 0;
+        });
+      if (versions.length > 0) {
+        const latest = versions[versions.length - 1];
+        extraDirs.push(path.join(nvmVersionsDir, latest, 'bin'));
+      }
+    } catch {}
+  }
+
+  // fnm (Fast Node Manager)
+  const fnmDir = path.join(home, '.local', 'share', 'fnm', 'node-versions');
+  if (fs.existsSync(fnmDir)) {
+    try {
+      const versions = fs.readdirSync(fnmDir)
+        .filter((d) => d.startsWith('v'))
+        .sort((a, b) => {
+          const pa = a.slice(1).split('.').map(Number);
+          const pb = b.slice(1).split('.').map(Number);
+          for (let i = 0; i < 3; i++) {
+            if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+          }
+          return 0;
+        });
+      if (versions.length > 0) {
+        const latest = versions[versions.length - 1];
+        extraDirs.push(path.join(fnmDir, latest, 'installation', 'bin'));
+      }
+    } catch {}
+  }
+
+  // volta
+  const voltaBin = path.join(home, '.volta', 'bin');
+  if (fs.existsSync(voltaBin)) {
+    extraDirs.push(voltaBin);
+  }
+
+  // Common system paths that may be missing from desktop sessions
+  for (const p of ['/usr/local/bin', path.join(home, '.local', 'bin')]) {
+    if (fs.existsSync(p)) extraDirs.push(p);
+  }
+
+  // Prepend discovered dirs to PATH (only those not already present)
+  const pathSet = new Set(currentPath.split(':'));
+  const toAdd = extraDirs.filter((d) => !pathSet.has(d));
+
+  return toAdd.length > 0 ? [...toAdd, currentPath].join(':') : currentPath;
+}
+
 /** Start the server via CLI */
 export function startServer(cli: string): Promise<boolean> {
   return new Promise((resolve) => {
-    execFile(cli, ['start'], { timeout: 15000 }, (err) => {
+    const env = { ...process.env, PATH: buildNodeAwarePath() };
+    execFile(cli, ['start'], { timeout: 15000, env }, (err) => {
+      if (err) {
+        console.error('[OctoAlly] Failed to start server:', err.message);
+      }
       resolve(!err);
     });
   });

@@ -117,11 +117,16 @@ function migrateSettingsHookPaths(projectPath: string): string | null {
 }
 
 /** Shared ruflo-run.sh — created by DevCortex installer, shared with OctoAlly.
- *  Falls back to npx if the script doesn't exist (no DevCortex installed). */
+ *  Falls back to local binary, then npx if neither exists (no DevCortex installed). */
 const RUFLO_RUN = existsSync(join(homedir(), '.octoally', 'ruflo-run.sh'))
   ? join(homedir(), '.octoally', 'ruflo-run.sh')
   : join(homedir(), '.hivecommand', 'ruflo-run.sh');
 const HAS_RUFLO_RUN = existsSync(RUFLO_RUN);
+const RUFLO_LOCAL_BIN = existsSync(join(homedir(), '.octoally', 'ruflo', 'node_modules', '.bin', 'ruflo'))
+  ? join(homedir(), '.octoally', 'ruflo', 'node_modules', '.bin', 'ruflo')
+  : existsSync(join(homedir(), '.hivecommand', 'ruflo', 'node_modules', '.bin', 'ruflo'))
+    ? join(homedir(), '.hivecommand', 'ruflo', 'node_modules', '.bin', 'ruflo')
+    : null;
 
 /** SONA patch script — patches ruflo's hook-handler.cjs with trajectory learning.
  *  Ships in this repo (scripts/patch-sona.sh) so all devs get it.
@@ -386,14 +391,40 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     return checkRufloConflicts(project.path);
   });
 
+  // Update the shared ruflo package at ~/.octoally/ruflo/
+  app.post('/projects/ruflo-update', async (_req, reply) => {
+    const rufloDir = join(homedir(), '.octoally', 'ruflo');
+    if (!existsSync(rufloDir)) {
+      mkdirSync(rufloDir, { recursive: true });
+    }
+    try {
+      const npx = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      const result = await execFileAsync(npx, ['install', 'ruflo@latest'], {
+        cwd: rufloDir,
+        timeout: 120_000,
+      });
+      // Read installed version
+      let version = 'unknown';
+      try {
+        const pkg = JSON.parse(readFileSync(join(rufloDir, 'node_modules', 'ruflo', 'package.json'), 'utf-8'));
+        version = pkg.version;
+      } catch {}
+      return { ok: true, version, output: result.stdout || 'done' };
+    } catch (err: any) {
+      return reply.status(500).send({ ok: false, error: err.message || String(err) });
+    }
+  });
+
   // Install RuFlo for a project (full init — backs up existing config files first)
   app.post<{
     Params: { id: string };
+    Body: { mode?: 'merge' | 'overwrite' };
   }>('/projects/:id/ruflo-install', async (req, reply) => {
     const db = getDb();
     const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as Project | undefined;
     if (!project) return reply.status(404).send({ error: 'Project not found' });
 
+    const mode = (req.body as any)?.mode || 'overwrite';
     const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
     // Ensure project directory exists (user may have typed a path that doesn't exist yet)
     if (!existsSync(project.path)) {
@@ -401,6 +432,15 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     }
     const opts = { cwd: project.path, timeout: 180_000 };
     const output: string[] = [];
+
+    // Save original content before ruflo overwrites (for merge mode)
+    const claudeMdPath = join(project.path, 'CLAUDE.md');
+    const settingsJsonPath = join(project.path, '.claude', 'settings.json');
+    const originalClaudeMd = existsSync(claudeMdPath) ? readFileSync(claudeMdPath, 'utf-8') : null;
+    let originalSettings: Record<string, any> | null = null;
+    if (existsSync(settingsJsonPath)) {
+      try { originalSettings = JSON.parse(readFileSync(settingsJsonPath, 'utf-8')); } catch {}
+    }
 
     // Create .bak copies before init overwrites them
     const backed = backupRufloConflicts(project.path);
@@ -446,7 +486,9 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     // Use shared ruflo-run.sh if available (fast), otherwise fall back to npx
     const rufloArgs = HAS_RUFLO_RUN
       ? { cmd: 'bash', args: (sub: string[]) => [RUFLO_RUN, ...sub] }
-      : { cmd: npx, args: (sub: string[]) => ['ruflo@latest', ...sub] };
+      : RUFLO_LOCAL_BIN
+        ? { cmd: RUFLO_LOCAL_BIN, args: (sub: string[]) => sub }
+        : { cmd: npx, args: (sub: string[]) => ['ruflo@latest', ...sub] };
     try {
       // Use --force (Claude-only) to get the full detailed CLAUDE.md config.
       // We create AGENTS.md separately below — using --dual would overwrite
@@ -456,6 +498,68 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
     } catch (err: any) {
       output.push('[error] ' + (err.message || String(err)));
       return reply.status(500).send({ ok: false, output: output.join('\n'), error: err.message });
+    }
+
+    // Merge mode: restore original user content into the newly generated files
+    if (mode === 'merge') {
+      // CLAUDE.md — append original content after ruflo template
+      if (originalClaudeMd) {
+        try {
+          // Strip any previous "Original Project Configuration" section to avoid duplication
+          const separator = '---\n\n## Original Project Configuration';
+          const sepIdx = originalClaudeMd.indexOf(separator);
+          const userContent = sepIdx >= 0 ? originalClaudeMd.slice(0, sepIdx).trimEnd() : originalClaudeMd.trimEnd();
+
+          if (userContent) {
+            const newClaudeMd = existsSync(claudeMdPath) ? readFileSync(claudeMdPath, 'utf-8') : '';
+            const merged = newClaudeMd.trimEnd()
+              + '\n\n---\n\n'
+              + '## Original Project Configuration\n\n'
+              + '<!-- Preserved from your previous CLAUDE.md -->\n\n'
+              + userContent;
+            writeFileSync(claudeMdPath, merged, 'utf-8');
+            output.push('[merge] CLAUDE.md — appended original project configuration');
+          }
+        } catch (err: any) {
+          output.push('[merge] CLAUDE.md — failed: ' + err.message);
+        }
+      }
+
+      // settings.json — deep merge: ruflo hooks + original user keys
+      if (originalSettings) {
+        try {
+          const newSettingsRaw = existsSync(settingsJsonPath) ? readFileSync(settingsJsonPath, 'utf-8') : '{}';
+          const newSettings = JSON.parse(newSettingsRaw);
+
+          // Preserve user keys that ruflo doesn't manage
+          const rufloManagedKeys = new Set(['hooks']);
+          for (const [key, value] of Object.entries(originalSettings)) {
+            if (!rufloManagedKeys.has(key) && !(key in newSettings)) {
+              newSettings[key] = value;
+            }
+          }
+
+          // For hooks: keep ruflo's hooks but merge in user's custom matchers
+          if (originalSettings.hooks && newSettings.hooks) {
+            for (const [hookType, hookEntries] of Object.entries(originalSettings.hooks) as [string, any[]][]) {
+              if (!Array.isArray(hookEntries)) continue;
+              const newEntries: any[] = newSettings.hooks[hookType] || [];
+              const existingMatchers = new Set(newEntries.map((e: any) => e.matcher));
+              for (const entry of hookEntries) {
+                if (entry.matcher && !existingMatchers.has(entry.matcher)) {
+                  newEntries.push(entry);
+                }
+              }
+              newSettings.hooks[hookType] = newEntries;
+            }
+          }
+
+          writeFileSync(settingsJsonPath, JSON.stringify(newSettings, null, 2), 'utf-8');
+          output.push('[merge] settings.json — preserved user config (permissions, env, custom hooks)');
+        } catch (err: any) {
+          output.push('[merge] settings.json — failed: ' + err.message);
+        }
+      }
     }
 
     // Create AGENTS.md for Codex support if it doesn't exist
@@ -591,7 +695,9 @@ npx @claude-flow/cli memory search \\
     try {
       const mcpCmd = HAS_RUFLO_RUN
         ? ['mcp', 'add', 'ruflo', '--', 'bash', RUFLO_RUN]
-        : ['mcp', 'add', 'ruflo', '--', 'npx', '-y', 'ruflo@latest'];
+        : RUFLO_LOCAL_BIN
+          ? ['mcp', 'add', 'ruflo', '--', RUFLO_LOCAL_BIN]
+          : ['mcp', 'add', 'ruflo', '--', 'npx', '-y', 'ruflo@latest'];
       await execFileAsync('claude', mcpCmd, { ...opts, timeout: 30_000 });
       output.push('[mcp] Registered ruflo as Claude Code MCP server');
     } catch (err: any) {
