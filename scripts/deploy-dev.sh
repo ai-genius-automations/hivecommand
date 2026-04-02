@@ -67,7 +67,9 @@ else
 fi
 
 # 6. Restart server
-log_info "Starting server..."
+log_info "Restarting server..."
+"$INSTALL_DIR/bin/octoally" stop 2>/dev/null || true
+sleep 1
 "$INSTALL_DIR/bin/octoally" start 2>/dev/null || true
 
 log_ok "Deploy complete! Launch octoally-desktop to test."

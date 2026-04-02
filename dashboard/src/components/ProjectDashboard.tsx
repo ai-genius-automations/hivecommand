@@ -221,7 +221,7 @@ function ProjectForm({
         // Keep dialog open, show installing status
         setRufloSetupStatus('installing');
         try {
-          await api.projects.rufloInstall(data.project.id);
+          await api.projects.rufloInstall(data.project.id, rufloInstallMode);
           setRufloSetupStatus('done');
         } catch {
           setRufloSetupStatus('error');
@@ -305,6 +305,7 @@ function ProjectForm({
   const [installRuflo, setInstallRuflo] = useState(true);
   const [rufloConflicts, setRufloConflicts] = useState<{ settingsJson: boolean; claudeMd: boolean; agentsMd: boolean } | null>(null);
   const [rufloConfirmPending, setRufloConfirmPending] = useState(false);
+  const [rufloInstallMode, setRufloInstallMode] = useState<'merge' | 'overwrite'>('merge');
   const [rufloSetupStatus, setRufloSetupStatus] = useState<'idle' | 'installing' | 'done' | 'error'>('idle');
 
   const isPending = createMutation.isPending || updateMutation.isPending || rufloSetupStatus === 'installing';
@@ -844,11 +845,12 @@ function ProjectForm({
             {/* RuFlo conflict confirmation */}
             {rufloConfirmPending && rufloConflicts && (
               <ConfirmModal
-                title="RuFlo will overwrite existing files"
-                message={`This project has config files that will be replaced by RuFlo (dual mode — Claude + Codex):\n${rufloConflicts.settingsJson ? '  - .claude/settings.json\n' : ''}${rufloConflicts.claudeMd ? '  - CLAUDE.md\n' : ''}${rufloConflicts.agentsMd ? '  - AGENTS.md\n' : ''}\nTimestamped .bak backups will be created before overwriting.`}
-                confirmLabel="Continue & Backup"
-                variant="danger"
+                title="RuFlo — existing config detected"
+                message={`This project has existing config files:\n${rufloConflicts.settingsJson ? '  - .claude/settings.json\n' : ''}${rufloConflicts.claudeMd ? '  - CLAUDE.md\n' : ''}${rufloConflicts.agentsMd ? '  - AGENTS.md\n' : ''}\nBackups will be created with a .bak extension.\nChoose how to handle existing configuration:`}
+                confirmLabel="Merge & Backup"
+                variant="warning"
                 onConfirm={() => {
+                  setRufloInstallMode('merge');
                   setRufloConfirmPending(false);
                   createMutation.mutate();
                 }}
@@ -856,7 +858,24 @@ function ProjectForm({
                   setRufloConfirmPending(false);
                   setRufloConflicts(null);
                 }}
-              />
+              >
+                <div className="flex items-center gap-2 mt-3">
+                  <button
+                    onClick={() => {
+                      setRufloInstallMode('overwrite');
+                      setRufloConfirmPending(false);
+                      createMutation.mutate();
+                    }}
+                    className="px-3 py-1.5 rounded-md text-xs font-medium"
+                    style={{ background: 'var(--error)', color: '#fff' }}
+                  >
+                    Overwrite & Backup
+                  </button>
+                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    Replace all existing config
+                  </span>
+                </div>
+              </ConfirmModal>
             )}
           </div>
         </div>
@@ -1336,9 +1355,15 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
   const [_installError, setInstallError] = useState<string | null>(null);
   const [rufloConfirm, setRufloConfirm] = useState<{ id: string; conflicts: { settingsJson: boolean; claudeMd: boolean; agentsMd: boolean } } | null>(null);
   const installMutation = useMutation({
-    mutationFn: (id: string) => api.projects.rufloInstall(id),
-    onMutate: (id) => { setInstallingId(id); setInstallError(null); },
-    onSuccess: async (_data, id) => {
+    mutationFn: async ({ id, mode }: { id: string; mode?: 'merge' | 'overwrite' }) => {
+      // Update ruflo package first if an update is available
+      if (cfStatusData?.rufloUpdateAvailable) {
+        try { await api.projects.rufloUpdate(); } catch {}
+      }
+      return api.projects.rufloInstall(id, mode);
+    },
+    onMutate: ({ id }) => { setInstallingId(id); setInstallError(null); },
+    onSuccess: async (_data, { id }) => {
       setInstallError(null);
       // Auto-reinstall DevCortex after ruflo re-init if project has it
       const dctxStatus = dctxStatusData?.statuses?.[id];
@@ -1362,10 +1387,10 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
       if (conflicts.settingsJson || conflicts.claudeMd) {
         setRufloConfirm({ id: projectId, conflicts });
       } else {
-        installMutation.mutate(projectId);
+        installMutation.mutate({ id: projectId });
       }
     } catch {
-      installMutation.mutate(projectId);
+      installMutation.mutate({ id: projectId });
     }
   };
 
@@ -1677,7 +1702,7 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
                         <button
                           className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap animate-pulse"
                           style={{ background: '#f59e0b20', color: '#f59e0b', border: '1px solid #f59e0b44' }}
-                          title={`RuFlo update available: v${cfStatusData.rufloVersion} → v${cfStatusData.rufloLatestVersion} — click to re-init`}
+                          title={`RuFlo update available: v${cfStatusData.rufloVersion} → v${cfStatusData.rufloLatestVersion} — click to update`}
                           onClick={(e) => { e.stopPropagation(); handleRufloInstall(project.id); }}
                         >
                           Update
@@ -1905,15 +1930,31 @@ export function ProjectDashboard({ onOpenProject }: ProjectDashboardProps) {
       {rufloConfirm && (
         <ConfirmModal
           title="Install / Re-init RuFlo"
-          message={`This project has existing config files that will be replaced (dual mode — Claude + Codex):\n${rufloConfirm.conflicts.settingsJson ? '• .claude/settings.json\n' : ''}${rufloConfirm.conflicts.claudeMd ? '• CLAUDE.md\n' : ''}${rufloConfirm.conflicts.agentsMd ? '• AGENTS.md\n' : ''}\nBackups will be created with a .bak extension before overwriting.`}
-          confirmLabel="Continue & Backup"
-          variant="danger"
+          message={`This project has existing config files:\n${rufloConfirm.conflicts.settingsJson ? '• .claude/settings.json\n' : ''}${rufloConfirm.conflicts.claudeMd ? '• CLAUDE.md\n' : ''}${rufloConfirm.conflicts.agentsMd ? '• AGENTS.md\n' : ''}\nBackups will be created with a .bak extension.\nChoose how to handle existing configuration:`}
+          confirmLabel="Merge & Backup"
+          variant="warning"
           onConfirm={() => {
-            installMutation.mutate(rufloConfirm.id);
+            installMutation.mutate({ id: rufloConfirm.id, mode: 'merge' });
             setRufloConfirm(null);
           }}
           onCancel={() => setRufloConfirm(null)}
-        />
+        >
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={() => {
+                installMutation.mutate({ id: rufloConfirm.id, mode: 'overwrite' });
+                setRufloConfirm(null);
+              }}
+              className="px-3 py-1.5 rounded-md text-xs font-medium"
+              style={{ background: 'var(--error)', color: '#fff' }}
+            >
+              Overwrite & Backup
+            </button>
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              Replace all existing config
+            </span>
+          </div>
+        </ConfirmModal>
       )}
 
     </div>

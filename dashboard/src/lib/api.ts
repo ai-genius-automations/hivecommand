@@ -98,10 +98,12 @@ export const api = {
       fetchJSON<{ settingsJson: boolean; claudeMd: boolean; agentsMd: boolean }>(`/projects/${id}/ruflo-check`),
     rufloAgents: (id: string) =>
       fetchJSON<{ agents: RufloAgent[] }>(`/projects/${id}/ruflo-agents`),
-    rufloInstall: (id: string) =>
+    rufloUpdate: () =>
+      fetchJSON<{ ok: boolean; version: string }>('/projects/ruflo-update', { method: 'POST' }),
+    rufloInstall: (id: string, mode: 'merge' | 'overwrite' = 'overwrite') =>
       fetchJSON<{ ok: boolean; output: string }>(`/projects/${id}/ruflo-install`, {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ mode }),
       }),
     devcortexStatus: () =>
       fetchJSON<DevcortexStatusResponse>('/projects/devcortex-status'),
