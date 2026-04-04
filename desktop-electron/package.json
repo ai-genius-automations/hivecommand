@@ -31,8 +31,18 @@
     ],
     "linux": {
       "target": [
-        { "target": "deb", "arch": ["x64"] },
-        { "target": "AppImage", "arch": ["x64"] }
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Development",
       "icon": "icons",
@@ -40,14 +50,25 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools",
       "icon": "icons/icon.icns"
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "icons/icon.ico"
     },
@@ -58,7 +79,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^35.0.0",
+    "electron": "^41.1.1",
     "electron-builder": "^26.0.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.0"
