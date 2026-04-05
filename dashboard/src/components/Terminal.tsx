@@ -259,13 +259,19 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
       fitAddon.fit();
     });
 
-    // Intercept Ctrl+Shift+C to copy selection
+    // Intercept Ctrl+C: copy selection if text is selected, otherwise send SIGINT
+    // Also keep Ctrl+Shift+C for backward compat
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'C' && e.type === 'keydown') {
+      if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'c' || e.key === 'C') && e.type === 'keydown') {
         const sel = term.getSelection();
-        if (sel) navigator.clipboard.writeText(sel);
-        e.preventDefault();
-        return false;
+        if (sel) {
+          navigator.clipboard.writeText(sel);
+          term.clearSelection();
+          e.preventDefault();
+          return false;
+        }
+        // No selection — let xterm send SIGINT (^C) as normal
+        if (!e.shiftKey) return true;
       }
       // Ctrl+Shift+V: read clipboard explicitly and send as input.
       // Can't rely on browser firing a paste event — synthetic keystrokes

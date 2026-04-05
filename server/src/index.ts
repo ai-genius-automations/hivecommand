@@ -24,6 +24,7 @@ import { fileRoutes } from './routes/files.js';
 import { gitRoutes } from './routes/git.js';
 import { agentRoutes } from './routes/agent.js';
 import { settingsRoutes } from './routes/settings.js';
+import { hooksRoutes } from './routes/hooks.js';
 import { appRouter } from './trpc/router.js';
 import {
   fastifyTRPCPlugin,
@@ -250,6 +251,40 @@ async function start() {
   });
   await app.register(fastifyWebsocket);
 
+  // --- Authentication: Bearer token check on all routes ---
+  if (config.authToken) {
+    app.addHook('onRequest', async (req, reply) => {
+      // Health check is always public
+      if (req.url === '/api/health' || req.url.startsWith('/api/health?')) {
+        return;
+      }
+
+      // WebSocket upgrade: check token in query param ?token=
+      const isUpgrade = req.headers.upgrade?.toLowerCase() === 'websocket';
+      if (isUpgrade) {
+        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const qToken = url.searchParams.get('token');
+        if (qToken !== config.authToken) {
+          return reply.status(401).send({ error: 'unauthorized' });
+        }
+        return;
+      }
+
+      // Non-API routes (static dashboard files) — skip auth
+      if (!req.url.startsWith('/api/') && !req.url.startsWith('/api')) {
+        return;
+      }
+
+      // Check Bearer token in Authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.slice(7) !== config.authToken) {
+        return reply.status(401).send({ error: 'unauthorized' });
+      }
+    });
+  } else {
+    console.warn('[SECURITY] WARNING: OCTOALLY_TOKEN is not set — all API endpoints are unauthenticated. Set OCTOALLY_TOKEN env var to enable authentication.');
+  }
+
   // API routes (REST for hooks, will add tRPC later)
   await app.register(eventRoutes, { prefix: '/api' });
   await app.register(sessionRoutes, { prefix: '/api' });
@@ -261,6 +296,7 @@ async function start() {
   await app.register(gitRoutes, { prefix: '/api' });
   await app.register(agentRoutes, { prefix: '/api' });
   await app.register(settingsRoutes, { prefix: '/api' });
+  await app.register(hooksRoutes, { prefix: '/api' });
 
   // tRPC
   await app.register(fastifyTRPCPlugin, {

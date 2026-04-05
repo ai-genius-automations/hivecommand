@@ -2263,6 +2263,43 @@ export async function spawnAdopt(sessionId: string, socketPath: string, projectP
   pushSystemEvent(`[OctoAlly] Adopted external session ${sessionId}: ${task.slice(0, 60)}`);
 }
 
+/**
+ * Persist session state to database for later resume.
+ */
+export function persistSessionState(sessionId: string): boolean {
+  if (!activeSessions.has(sessionId)) return false;
+
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Session | undefined;
+  if (!row) return false;
+
+  const state = JSON.stringify({
+    id: row.id,
+    task: row.task,
+    project_id: row.project_id,
+    claude_session_id: row.claude_session_id,
+    status: row.status,
+    savedAt: new Date().toISOString(),
+  });
+
+  db.prepare('UPDATE sessions SET session_state = ? WHERE id = ?').run(state, sessionId);
+  return true;
+}
+
+/**
+ * Get persisted session state from database.
+ */
+export function getPersistedState(sessionId: string): Record<string, unknown> | null {
+  const db = getDb();
+  const row = db.prepare('SELECT session_state FROM sessions WHERE id = ?').get(sessionId) as { session_state: string | null } | undefined;
+  if (!row?.session_state) return null;
+  try {
+    return JSON.parse(row.session_state);
+  } catch {
+    return null;
+  }
+}
+
 function killOrphanedProcess(pid: number, sessionId: string): void {
   try {
     process.kill(pid, 0);
@@ -2272,4 +2309,189 @@ function killOrphanedProcess(pid: number, sessionId: string): void {
 
   console.log(`  Killing orphaned process PID ${pid} (session ${sessionId})`);
   killPidTree(pid);
+}
+
+// ─── Capacity Wake ──────────────────────────────────────────
+// Poll-based capacity detection. When a session hits a 429 rate limit,
+// register a wake listener that polls backend health until capacity returns.
+
+interface WakeListener {
+  sessionId: string;
+  registeredAt: number;
+  callback: () => void;
+}
+
+const wakeListeners: WakeListener[] = [];
+let wakePollerActive = false;
+const WAKE_POLL_INTERVAL = 30_000; // 30 seconds
+const WAKE_MAX_AGE = 600_000; // 10 minutes max wait
+
+export function registerCapacityWake(sessionId: string, callback: () => void): void {
+  wakeListeners.push({
+    sessionId,
+    registeredAt: Date.now(),
+    callback,
+  });
+
+  if (!wakePollerActive) {
+    startWakePoller();
+  }
+}
+
+export function removeCapacityWake(sessionId: string): void {
+  const idx = wakeListeners.findIndex(w => w.sessionId === sessionId);
+  if (idx !== -1) wakeListeners.splice(idx, 1);
+  if (wakeListeners.length === 0) {
+    wakePollerActive = false;
+  }
+}
+
+function startWakePoller(): void {
+  wakePollerActive = true;
+
+  const poll = () => {
+    if (!wakePollerActive || wakeListeners.length === 0) {
+      wakePollerActive = false;
+      return;
+    }
+
+    const now = Date.now();
+
+    // Remove expired listeners
+    for (let i = wakeListeners.length - 1; i >= 0; i--) {
+      if (now - wakeListeners[i].registeredAt > WAKE_MAX_AGE) {
+        wakeListeners.splice(i, 1);
+      }
+    }
+
+    if (wakeListeners.length === 0) {
+      wakePollerActive = false;
+      return;
+    }
+
+    // Check capacity by trying a lightweight health check
+    try {
+      const result = execFileSync('python3', ['-m', 'src.backend_health'], {
+        timeout: 5000,
+        encoding: 'utf-8',
+        cwd: '/home/hemang/ALETHEIA-NEXUS',
+      });
+
+      // If health check succeeds and reports usable, wake all listeners
+      if (result.includes('"status": "usable"') || result.includes('"usable"')) {
+        const listenersToWake = [...wakeListeners];
+        wakeListeners.length = 0;
+        wakePollerActive = false;
+
+        for (const listener of listenersToWake) {
+          try {
+            listener.callback();
+          } catch {
+            // Don't let one bad callback kill the rest
+          }
+        }
+        return;
+      }
+    } catch {
+      // Health check failed — keep polling
+    }
+
+    setTimeout(poll, WAKE_POLL_INTERVAL);
+  };
+
+  setTimeout(poll, WAKE_POLL_INTERVAL);
+}
+
+// ─── Coordinator Permission Propagation ──────────────────────
+// When a parent session spawns child sessions (sub-agents),
+// permissions flow from parent to child with optional restrictions.
+
+export interface PermissionGrant {
+  sessionId: string;
+  parentId: string | null;
+  allowedTools: string[];
+  deniedTools: string[];
+  grantedAt: string;
+}
+
+const sessionPermissions: Map<string, PermissionGrant> = new Map();
+
+/**
+ * Grant permissions to a session, optionally inheriting from parent.
+ * If parentId is provided and has a grant, the child inherits the parent's
+ * allowed/denied tools. restrictTools narrows the allowed set (intersection),
+ * denyTools expands the denied set (union).
+ */
+export function grantPermissions(
+  sessionId: string,
+  parentId: string | null,
+  options?: { restrictTools?: string[]; denyTools?: string[] }
+): PermissionGrant {
+  let allowedTools: string[] = [];
+  let deniedTools: string[] = options?.denyTools || [];
+
+  if (parentId) {
+    const parentGrant = sessionPermissions.get(parentId);
+    if (parentGrant) {
+      // Inherit parent's allowed tools
+      allowedTools = [...parentGrant.allowedTools];
+      // Merge parent's denied tools (deny is additive)
+      deniedTools = [...new Set([...parentGrant.deniedTools, ...deniedTools])];
+    }
+  }
+
+  // Apply restrictions (intersection with parent's tools)
+  if (options?.restrictTools && options.restrictTools.length > 0) {
+    if (allowedTools.length > 0) {
+      allowedTools = allowedTools.filter(t => options.restrictTools!.includes(t));
+    } else {
+      allowedTools = [...options.restrictTools];
+    }
+  }
+
+  const grant: PermissionGrant = {
+    sessionId,
+    parentId,
+    allowedTools,
+    deniedTools,
+    grantedAt: new Date().toISOString(),
+  };
+
+  sessionPermissions.set(sessionId, grant);
+  return grant;
+}
+
+/**
+ * Check if a session has permission to use a tool.
+ * Returns true if allowed, false if denied.
+ * Sessions without a grant (root sessions) have no restrictions.
+ */
+export function checkPermission(sessionId: string, toolName: string): boolean {
+  const grant = sessionPermissions.get(sessionId);
+  if (!grant) return true; // No grant = no restrictions (root session)
+
+  // Check denied first (deny always wins over allow)
+  if (grant.deniedTools.some(d => toolName.startsWith(d) || d === toolName)) {
+    return false;
+  }
+
+  // If allowed list is empty, everything not denied is allowed
+  if (grant.allowedTools.length === 0) return true;
+
+  // Check allowed list
+  return grant.allowedTools.some(a => toolName.startsWith(a) || a === toolName);
+}
+
+/**
+ * Get permission grant for a session.
+ */
+export function getPermissions(sessionId: string): PermissionGrant | null {
+  return sessionPermissions.get(sessionId) || null;
+}
+
+/**
+ * Remove permissions when session ends.
+ */
+export function revokePermissions(sessionId: string): boolean {
+  return sessionPermissions.delete(sessionId);
 }
