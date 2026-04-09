@@ -150,6 +150,7 @@ async function cleanRufloFromProject(projectPath: string): Promise<string[]> {
     '.devcortex',
     'claude-flow.config.json',
     '.mcp.json',
+    'hooks/on-tool-use.sh',
   ];
   for (const file of filesToRemove) {
     const fullPath = join(projectPath, file);
@@ -159,6 +160,18 @@ async function cleanRufloFromProject(projectPath: string): Promise<string[]> {
         cleaned.push(`removed ${file}`);
       } catch { /* non-fatal */ }
     }
+  }
+
+  // Remove hooks/ directory if empty (not a standard folder — was added by OctoAlly)
+  const hooksDir = join(projectPath, 'hooks');
+  if (existsSync(hooksDir)) {
+    try {
+      const remaining = readdirSync(hooksDir);
+      if (remaining.length === 0) {
+        await rm(hooksDir, { recursive: true });
+        cleaned.push('removed empty hooks/');
+      }
+    } catch { /* non-fatal */ }
   }
 
   // Deregister ruflo/devcortex/claude-flow MCP servers (idempotent)
