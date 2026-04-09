@@ -151,6 +151,7 @@ async function cleanRufloFromProject(projectPath: string): Promise<string[]> {
     'claude-flow.config.json',
     '.mcp.json',
     'hooks/on-tool-use.sh',
+    'ruvector.db',
   ];
   for (const file of filesToRemove) {
     const fullPath = join(projectPath, file);
