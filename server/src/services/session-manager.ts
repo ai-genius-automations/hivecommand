@@ -12,6 +12,7 @@ import { getSetting } from '../routes/settings.js';
 import { nanoid } from 'nanoid';
 import type { WebSocket } from 'ws';
 import { getOrCreateTracker, removeTracker, recoverFromBuffer } from './session-state.js';
+import { fireNotificationHook } from '../routes/hooks.js';
 
 const nodeRequire = createRequire(import.meta.url);
 const { Terminal: HeadlessTerminal } = nodeRequire('@xterm/headless') as { Terminal: any };
@@ -462,31 +463,52 @@ function tmuxArgsForSession(sessionId: string): string[] {
   return tmuxBaseArgs;
 }
 
-/** Check if a tmux session is alive on any server (octoally, hivecommand, openflow) */
+/** Check if a tmux session is alive on any server (octoally, hivecommand, openflow).
+ *  Retries once per server after 300ms to handle transient socket states. */
 async function tmuxExistsAsync(sessionId: string): Promise<boolean> {
   const name = tmuxSessionName(sessionId);
   for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
     try {
       await execFileAsync('tmux', ['-L', server, 'has-session', '-t', name]);
       return true;
-    } catch { /* try next */ }
+    } catch {
+      // Retry once — tmux socket may be momentarily unavailable after server restart
+      try {
+        await new Promise(r => setTimeout(r, 300));
+        await execFileAsync('tmux', ['-L', server, 'has-session', '-t', name]);
+        tlog(`[RECONNECT] tmux session ${sessionId} found on retry (server: ${server})`);
+        return true;
+      } catch { /* genuinely not on this server */ }
+    }
   }
   return false;
 }
 
-/** List all OctoAlly tmux session IDs that are still alive (checks legacy servers too) */
+/** List all OctoAlly tmux session IDs that are still alive (checks legacy servers too).
+ *  If a server query fails, retries once after a short delay to handle transient
+ *  states (e.g. tmux server socket not yet ready after a systemd restart). */
 function tmuxListOctoallySessionIds(): string[] {
   const ids = new Set<string>();
   for (const server of [TMUX_SERVER, ...LEGACY_TMUX_SERVERS]) {
+    let output: string | undefined;
     try {
-      const output = execFileSync('tmux', ['-L', server, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
+      output = execFileSync('tmux', ['-L', server, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
+    } catch {
+      // Retry once after 500ms — tmux server socket may be in a transient state
+      try {
+        execFileSync('sleep', ['0.5']);
+        output = execFileSync('tmux', ['-L', server, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
+        tlog(`[CLEANUP] tmux server '${server}' responded on retry`);
+      } catch { /* server genuinely not running */ }
+    }
+    if (output) {
       output
         .trim()
         .split('\n')
         .filter(name => name.startsWith('of-'))
         .map(name => name.replace('of-', ''))
         .forEach(id => ids.add(id));
-    } catch { /* server not running */ }
+    }
   }
   return [...ids];
 }
@@ -735,6 +757,28 @@ function wireWorker(sessionId: string, worker: ChildProcess, projectPath?: strin
           type: 'session_end',
           data: { exitCode: msg.exitCode, signal: msg.signal },
         });
+
+        // Fire session_complete notification hook (fire-and-forget)
+        try {
+          fireNotificationHook({
+            type: 'session_complete',
+            session_id: sessionId,
+            detail: { status, exitCode: msg.exitCode, signal: msg.signal ?? null },
+            timestamp: new Date().toISOString(),
+          }).catch(() => { /* non-fatal */ });
+        } catch { /* non-fatal */ }
+
+        // Fire error_spike if the session failed (non-zero exit)
+        if (msg.exitCode !== 0) {
+          try {
+            fireNotificationHook({
+              type: 'error_spike',
+              session_id: sessionId,
+              detail: { exitCode: msg.exitCode, signal: msg.signal ?? null, reason: 'session_failed' },
+              timestamp: new Date().toISOString(),
+            }).catch(() => { /* non-fatal */ });
+          } catch { /* non-fatal */ }
+        }
 
         const taskSnippet = (() => {
           try { return (getDb().prepare('SELECT task FROM sessions WHERE id = ?').get(sessionId) as any)?.task?.slice(0, 60) ?? ''; } catch { return ''; }
@@ -1416,6 +1460,19 @@ export async function killSession(sessionId: string): Promise<boolean> {
   `).run(sessionId);
 
   console.log(`[KILL] Session ${sessionId} killed (db_updated=${result.changes > 0})`);
+
+  // Fire session_complete notification hook for cancelled sessions (fire-and-forget)
+  if (!!active || result.changes > 0) {
+    try {
+      fireNotificationHook({
+        type: 'session_complete',
+        session_id: sessionId,
+        detail: { status: 'cancelled', exitCode: -1, reason: 'killed' },
+        timestamp: new Date().toISOString(),
+      }).catch(() => { /* non-fatal */ });
+    } catch { /* non-fatal */ }
+  }
+
   return !!active || result.changes > 0;
 }
 
@@ -1549,17 +1606,28 @@ export function getSessionTmuxServer(sessionId: string): string {
  * Gracefully shut down on server restart.
  * Preserves tmux sessions so they can be reconnected on next startup.
  * Only kills worker processes (they get re-forked by autoReconnectDetachedSessions).
+ *
+ * Shutdown sequence:
+ * 1. Notify all WebSocket subscribers with 'server-restarting' (clients auto-reconnect)
+ * 2. Mark all sessions as 'detached' in DB (synchronous better-sqlite3, no flush needed)
+ * 3. SIGTERM workers with 3s grace period, then escalate to SIGKILL
+ * 4. Returns when all workers have exited
  */
-export function killAllSessions(): void {
+export async function killAllSessions(): Promise<void> {
   const db = getDb();
-  for (const [id, active] of activeSessions) {
-    // Kill the worker process only — leave tmux/dtach alive for reconnect.
-    // Do NOT send { type: 'kill' } — that tells the worker to kill tmux too.
-    try {
-      active.worker.kill('SIGKILL');
-    } catch { /* ignore */ }
+  const workerExitPromises: Promise<void>[] = [];
 
-    // Mark as detached so autoReconnectDetachedSessions picks them up on next startup
+  for (const [id, active] of activeSessions) {
+    // 1. Notify WebSocket subscribers so clients know to auto-reconnect
+    for (const ws of active.subscribers) {
+      try {
+        ws.send(JSON.stringify({ type: 'server-restarting' }));
+        ws.close(1012, 'server-restarting'); // 1012 = Service Restart
+      } catch { /* client may already be gone */ }
+    }
+
+    // 2. Mark as detached so autoReconnectDetachedSessions picks them up on next startup
+    //    (better-sqlite3 is synchronous — completes immediately, no flush needed)
     try {
       db.prepare(`
         UPDATE sessions SET status = 'detached', updated_at = datetime('now')
@@ -1567,6 +1635,54 @@ export function killAllSessions(): void {
       `).run(id);
     } catch { /* DB might already be closed */ }
 
+    // 3. SIGTERM the worker — give it time to detach tmux client & clean up FIFOs
+    const worker = active.worker;
+    try {
+      worker.kill('SIGTERM');
+    } catch { /* already dead */ }
+
+    // Track worker exit; escalate SIGTERM -> SIGKILL after 3s
+    const exitPromise = new Promise<void>((resolve) => {
+      if (worker.exitCode !== null || worker.signalCode !== null) {
+        resolve();
+        return;
+      }
+      const escalation = setTimeout(() => {
+        try { worker.kill('SIGKILL'); } catch { /* already dead */ }
+        // Give SIGKILL 200ms to take effect, then resolve regardless
+        setTimeout(() => resolve(), 200).unref();
+      }, 3000);
+      escalation.unref();
+      worker.once('exit', () => {
+        clearTimeout(escalation);
+        resolve();
+      });
+    });
+    workerExitPromises.push(exitPromise);
+
+    activeSessions.delete(id);
+  }
+
+  // Wait for all workers to exit (or be force-killed after 3s)
+  if (workerExitPromises.length > 0) {
+    await Promise.all(workerExitPromises);
+  }
+}
+
+/**
+ * Synchronous fallback for uncaught-exception handler where we cannot await.
+ * Uses SIGKILL since the process is crashing anyway.
+ */
+export function killAllSessionsSync(): void {
+  const db = getDb();
+  for (const [id, active] of activeSessions) {
+    try { active.worker.kill('SIGKILL'); } catch { /* ignore */ }
+    try {
+      db.prepare(`
+        UPDATE sessions SET status = 'detached', updated_at = datetime('now')
+        WHERE id = ? AND status IN ('running', 'pending')
+      `).run(id);
+    } catch { /* DB might already be closed */ }
     activeSessions.delete(id);
   }
 }
@@ -1595,6 +1711,13 @@ export async function cleanupStaleRunningSessions(): Promise<void> {
     `).all() as { id: string; pid: number; project_path: string | null }[];
 
     if (stale.length === 0) { tlog(`[CLEANUP] no stale sessions, done in ${Date.now() - t0}ms`); return; }
+
+    // Stabilization delay: after a systemd restart, tmux server sockets may take
+    // a moment to become queryable even though the tmux processes survived.
+    // Wait briefly before probing to avoid false negatives that would mark
+    // surviving sessions as 'failed'.
+    await new Promise(r => setTimeout(r, 750));
+    tlog(`[CLEANUP] post-stabilization delay, probing ${stale.length} sessions`);
 
     const t1 = Date.now();
     const aliveDtach = config.useDtach ? new Set(dtachListOctoallySessions()) : new Set<string>();
@@ -1823,6 +1946,12 @@ export async function autoReconnectDetachedSessions(): Promise<void> {
       batch.map(({ id }) => reconnectSession(id).finally(() => { _reconnectDone++; }))
     );
     reconnected += results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+
+    // Brief cooldown between batches to avoid overwhelming the system
+    // with concurrent worker forks + tmux operations
+    if (i + RECONNECT_BATCH_SIZE < detached.length) {
+      await new Promise(r => setTimeout(r, 500));
+    }
   }
 
   _reconnecting = false;
@@ -2210,6 +2339,43 @@ export async function spawnAdopt(sessionId: string, socketPath: string, projectP
   pushSystemEvent(`[OctoAlly] Adopted external session ${sessionId}: ${task.slice(0, 60)}`);
 }
 
+/**
+ * Persist session state to database for later resume.
+ */
+export function persistSessionState(sessionId: string): boolean {
+  if (!activeSessions.has(sessionId)) return false;
+
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as Session | undefined;
+  if (!row) return false;
+
+  const state = JSON.stringify({
+    id: row.id,
+    task: row.task,
+    project_id: row.project_id,
+    claude_session_id: row.claude_session_id,
+    status: row.status,
+    savedAt: new Date().toISOString(),
+  });
+
+  db.prepare('UPDATE sessions SET session_state = ? WHERE id = ?').run(state, sessionId);
+  return true;
+}
+
+/**
+ * Get persisted session state from database.
+ */
+export function getPersistedState(sessionId: string): Record<string, unknown> | null {
+  const db = getDb();
+  const row = db.prepare('SELECT session_state FROM sessions WHERE id = ?').get(sessionId) as { session_state: string | null } | undefined;
+  if (!row?.session_state) return null;
+  try {
+    return JSON.parse(row.session_state);
+  } catch {
+    return null;
+  }
+}
+
 function killOrphanedProcess(pid: number, sessionId: string): void {
   try {
     process.kill(pid, 0);
@@ -2219,4 +2385,218 @@ function killOrphanedProcess(pid: number, sessionId: string): void {
 
   console.log(`  Killing orphaned process PID ${pid} (session ${sessionId})`);
   killPidTree(pid);
+}
+
+// ─── Capacity Wake ──────────────────────────────────────────
+// Poll-based capacity detection. When a session hits a 429 rate limit,
+// register a wake listener that polls backend health until capacity returns.
+
+interface WakeListener {
+  sessionId: string;
+  registeredAt: number;
+  callback: () => void;
+}
+
+const wakeListeners: WakeListener[] = [];
+let wakePollerActive = false;
+const WAKE_POLL_INTERVAL = 30_000; // 30 seconds
+const WAKE_MAX_AGE = 600_000; // 10 minutes max wait
+
+export function registerCapacityWake(sessionId: string, callback: () => void): void {
+  wakeListeners.push({
+    sessionId,
+    registeredAt: Date.now(),
+    callback,
+  });
+
+  // Fire rate_limit notification hook (fire-and-forget)
+  try {
+    fireNotificationHook({
+      type: 'rate_limit',
+      session_id: sessionId,
+      detail: { reason: 'capacity_exhausted', pollingIntervalMs: WAKE_POLL_INTERVAL },
+      timestamp: new Date().toISOString(),
+    }).catch(() => { /* non-fatal */ });
+  } catch { /* non-fatal */ }
+
+  if (!wakePollerActive) {
+    startWakePoller();
+  }
+}
+
+export function removeCapacityWake(sessionId: string): void {
+  const idx = wakeListeners.findIndex(w => w.sessionId === sessionId);
+  if (idx !== -1) wakeListeners.splice(idx, 1);
+  if (wakeListeners.length === 0) {
+    wakePollerActive = false;
+  }
+}
+
+function startWakePoller(): void {
+  wakePollerActive = true;
+
+  const poll = () => {
+    if (!wakePollerActive || wakeListeners.length === 0) {
+      wakePollerActive = false;
+      return;
+    }
+
+    const now = Date.now();
+
+    // Remove expired listeners
+    for (let i = wakeListeners.length - 1; i >= 0; i--) {
+      if (now - wakeListeners[i].registeredAt > WAKE_MAX_AGE) {
+        wakeListeners.splice(i, 1);
+      }
+    }
+
+    if (wakeListeners.length === 0) {
+      wakePollerActive = false;
+      return;
+    }
+
+    // Check capacity by trying a lightweight health check
+    try {
+      const result = execFileSync('python3', ['-m', 'src.backend_health'], {
+        timeout: 5000,
+        encoding: 'utf-8',
+        cwd: process.env.ALETHEIA_NEXUS_PATH || join(homedir(), 'ALETHEIA-NEXUS'),
+      });
+
+      // If health check succeeds and reports usable, wake all listeners
+      if (result.includes('"status": "usable"') || result.includes('"usable"')) {
+        const listenersToWake = [...wakeListeners];
+        wakeListeners.length = 0;
+        wakePollerActive = false;
+
+        for (const listener of listenersToWake) {
+          try {
+            listener.callback();
+          } catch {
+            // Don't let one bad callback kill the rest
+          }
+        }
+        return;
+      }
+    } catch {
+      // Health check failed — keep polling
+    }
+
+    setTimeout(poll, WAKE_POLL_INTERVAL);
+  };
+
+  setTimeout(poll, WAKE_POLL_INTERVAL);
+}
+
+// ─── Coordinator Permission Propagation ──────────────────────
+// When a parent session spawns child sessions (sub-agents),
+// permissions flow from parent to child with optional restrictions.
+
+export interface PermissionGrant {
+  sessionId: string;
+  parentId: string | null;
+  allowedTools: string[];
+  deniedTools: string[];
+  grantedAt: string;
+}
+
+const sessionPermissions: Map<string, PermissionGrant> = new Map();
+
+/**
+ * Grant permissions to a session, optionally inheriting from parent.
+ * If parentId is provided and has a grant, the child inherits the parent's
+ * allowed/denied tools. restrictTools narrows the allowed set (intersection),
+ * denyTools expands the denied set (union).
+ */
+export function grantPermissions(
+  sessionId: string,
+  parentId: string | null,
+  options?: { restrictTools?: string[]; denyTools?: string[] }
+): PermissionGrant {
+  let allowedTools: string[] = [];
+  let deniedTools: string[] = options?.denyTools || [];
+
+  if (parentId) {
+    const parentGrant = sessionPermissions.get(parentId);
+    if (parentGrant) {
+      // Inherit parent's allowed tools
+      allowedTools = [...parentGrant.allowedTools];
+      // Merge parent's denied tools (deny is additive)
+      deniedTools = [...new Set([...parentGrant.deniedTools, ...deniedTools])];
+    }
+  }
+
+  // Apply restrictions (intersection with parent's tools)
+  if (options?.restrictTools && options.restrictTools.length > 0) {
+    if (allowedTools.length > 0) {
+      allowedTools = allowedTools.filter(t => options.restrictTools!.includes(t));
+    } else {
+      allowedTools = [...options.restrictTools];
+    }
+  }
+
+  const grant: PermissionGrant = {
+    sessionId,
+    parentId,
+    allowedTools,
+    deniedTools,
+    grantedAt: new Date().toISOString(),
+  };
+
+  sessionPermissions.set(sessionId, grant);
+  return grant;
+}
+
+/**
+ * Check if a session has permission to use a tool.
+ * Returns true if allowed, false if denied.
+ * Sessions without a grant (root sessions) have no restrictions.
+ */
+export function checkPermission(sessionId: string, toolName: string): boolean {
+  const grant = sessionPermissions.get(sessionId);
+  if (!grant) return true; // No grant = no restrictions (root session)
+
+  // Check denied first (deny always wins over allow)
+  if (grant.deniedTools.some(d => toolName.startsWith(d) || d === toolName)) {
+    try {
+      fireNotificationHook({
+        type: 'tool_denied',
+        session_id: sessionId,
+        detail: { tool: toolName, reason: 'explicitly_denied', parentId: grant.parentId },
+        timestamp: new Date().toISOString(),
+      }).catch(() => { /* non-fatal */ });
+    } catch { /* non-fatal */ }
+    return false;
+  }
+
+  // If allowed list is empty, everything not denied is allowed
+  if (grant.allowedTools.length === 0) return true;
+
+  // Check allowed list — if not in the allowed list, deny
+  const allowed = grant.allowedTools.some(a => toolName.startsWith(a) || a === toolName);
+  if (!allowed) {
+    try {
+      fireNotificationHook({
+        type: 'tool_denied',
+        session_id: sessionId,
+        detail: { tool: toolName, reason: 'not_in_allowlist', parentId: grant.parentId },
+        timestamp: new Date().toISOString(),
+      }).catch(() => { /* non-fatal */ });
+    } catch { /* non-fatal */ }
+  }
+  return allowed;
+}
+
+/**
+ * Get permission grant for a session.
+ */
+export function getPermissions(sessionId: string): PermissionGrant | null {
+  return sessionPermissions.get(sessionId) || null;
+}
+
+/**
+ * Remove permissions when session ends.
+ */
+export function revokePermissions(sessionId: string): boolean {
+  return sessionPermissions.delete(sessionId);
 }

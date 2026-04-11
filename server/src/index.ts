@@ -24,19 +24,30 @@ import { fileRoutes } from './routes/files.js';
 import { gitRoutes } from './routes/git.js';
 import { agentRoutes } from './routes/agent.js';
 import { settingsRoutes } from './routes/settings.js';
+import { hooksRoutes } from './routes/hooks.js';
+import { skillsRoutes } from './routes/skills.js';
+import { skillSuggestRoutes } from './routes/skill-suggest.js';
+import { magicDocsRoutes } from './routes/magic-docs.js';
+import { permissionsRoutes } from './routes/permissions.js';
 import { appRouter } from './trpc/router.js';
 import {
   fastifyTRPCPlugin,
   type FastifyTRPCPluginOptions,
 } from '@trpc/server/adapters/fastify';
 import type { AppRouter } from './trpc/router.js';
-import { killAllSessions, cleanupStaleRunningSessions, autoReconnectDetachedSessions, getReconnectStatus, startPendingSessionWatchdog } from './services/session-manager.js';
+import { killAllSessions, killAllSessionsSync, cleanupStaleRunningSessions, autoReconnectDetachedSessions, getReconnectStatus, startPendingSessionWatchdog } from './services/session-manager.js';
 import { config } from './config.js';
-import { appendFileSync, writeFileSync } from 'fs';
+import { appendFileSync, writeFileSync, readdirSync, existsSync, readFileSync, rmSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import { installDefaultAgents } from './data/default-agents.js';
 const tlog = (s: string) => { try { appendFileSync('/tmp/octoally-timing.log', `[${new Date().toISOString()}] ${s}\n`); } catch {} };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Module-level ref so shutdown handler can close the server
+let serverApp: import('fastify').FastifyInstance | null = null;
+let shuttingDown = false;
 
 // Event loop lag detector — logs when the event loop is blocked for >100ms
 let _lagLast = Date.now();
@@ -49,6 +60,34 @@ setInterval(() => {
   }
 }, 50).unref();
 
+// --- Plugin loader: scans ~/.octoally/plugins/*/index.js ---
+async function loadPlugins(app: import('fastify').FastifyInstance) {
+  const pluginsDir = join(homedir(), '.octoally', 'plugins');
+  if (!existsSync(pluginsDir)) { mkdirSync(pluginsDir, { recursive: true }); return; }
+  const manifests: any[] = [];
+  for (const entry of readdirSync(pluginsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const pluginEntry = join(pluginsDir, entry.name, 'index.js');
+    const manifestPath = join(pluginsDir, entry.name, 'manifest.json');
+    // Collect manifest if present
+    if (existsSync(manifestPath)) {
+      try { manifests.push(JSON.parse(readFileSync(manifestPath, 'utf-8'))); } catch {}
+    }
+    if (!existsSync(pluginEntry)) continue;
+    try {
+      const mod = await import(pluginEntry);
+      if (typeof mod.default === 'function') {
+        await app.register(mod.default, { prefix: `/api/plugins/${entry.name}` });
+        console.log(`  [plugin] Loaded: ${entry.name}`);
+      }
+    } catch (err: any) {
+      console.error(`  [plugin] Failed to load ${entry.name}: ${err.message}`);
+    }
+  }
+  // Serve collected manifests
+  app.get('/api/plugins/manifests', async () => manifests);
+}
+
 async function start() {
   const app = Fastify({
     logger: {
@@ -59,6 +98,7 @@ async function start() {
       },
     },
   });
+  serverApp = app;
 
   // Clear timing log for fresh run
   try { writeFileSync('/tmp/octoally-timing.log', ''); } catch {}
@@ -106,6 +146,48 @@ async function start() {
   });
   await app.register(fastifyWebsocket);
 
+  // --- Authentication: Bearer token check on all routes ---
+  if (config.authToken) {
+    app.addHook('onRequest', async (req, reply) => {
+      // Health check is always public
+      if (req.url === '/api/health' || req.url.startsWith('/api/health?')) {
+        return;
+      }
+
+      // Plugin routes are served inside an authenticated dashboard iframe —
+      // the user already passed auth to reach the dashboard.  Plugin
+      // endpoints expose read-only telemetry/search, so exempting them
+      // avoids the need to inject Bearer tokens into panel HTML.
+      if (req.url.startsWith('/api/plugins/')) {
+        return;
+      }
+
+      // WebSocket upgrade: check token in query param ?token=
+      const isUpgrade = req.headers.upgrade?.toLowerCase() === 'websocket';
+      if (isUpgrade) {
+        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const qToken = url.searchParams.get('token');
+        if (qToken !== config.authToken) {
+          return reply.status(401).send({ error: 'unauthorized' });
+        }
+        return;
+      }
+
+      // Non-API routes (static dashboard files) — skip auth
+      if (!req.url.startsWith('/api/') && !req.url.startsWith('/api')) {
+        return;
+      }
+
+      // Check Bearer token in Authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ') || authHeader.slice(7) !== config.authToken) {
+        return reply.status(401).send({ error: 'unauthorized' });
+      }
+    });
+  } else {
+    console.warn('[SECURITY] WARNING: OCTOALLY_TOKEN is not set — all API endpoints are unauthenticated. Set OCTOALLY_TOKEN env var to enable authentication.');
+  }
+
   // API routes (REST for hooks, will add tRPC later)
   await app.register(eventRoutes, { prefix: '/api' });
   await app.register(sessionRoutes, { prefix: '/api' });
@@ -117,6 +199,12 @@ async function start() {
   await app.register(gitRoutes, { prefix: '/api' });
   await app.register(agentRoutes, { prefix: '/api' });
   await app.register(settingsRoutes, { prefix: '/api' });
+  await app.register(hooksRoutes, { prefix: '/api' });
+  await app.register(skillsRoutes, { prefix: '/api' });
+  await app.register(skillSuggestRoutes, { prefix: '/api' });
+  await app.register(magicDocsRoutes, { prefix: '/api' });
+  await app.register(permissionsRoutes, { prefix: '/api' });
+  await loadPlugins(app);
 
   // tRPC
   await app.register(fastifyTRPCPlugin, {
@@ -267,11 +355,40 @@ async function start() {
 
   app.get('/api/health', async () => {
     const reconnect = getReconnectStatus();
+
+    // DB connectivity check
+    let db: { connected: boolean; latency_ms?: number; error?: string };
+    try {
+      const t0 = performance.now();
+      getDb().prepare('SELECT 1').get();
+      db = { connected: true, latency_ms: Math.round((performance.now() - t0) * 10) / 10 };
+    } catch (err: any) {
+      db = { connected: false, error: err?.message || 'unknown' };
+    }
+
+    // Memory usage
+    const mem = process.memoryUsage();
+    const memory = {
+      rss_mb: Math.round(mem.rss / 1048576),
+      heap_used_mb: Math.round(mem.heapUsed / 1048576),
+      heap_total_mb: Math.round(mem.heapTotal / 1048576),
+    };
+
+    // Event loop lag via setTimeout(0)
+    const event_loop_lag_ms = await new Promise<number>((resolve) => {
+      const start = performance.now();
+      setTimeout(() => resolve(Math.round((performance.now() - start) * 10) / 10), 0);
+    });
+
     return {
       name: 'octoally',
       version: serverVersion,
       status: 'running',
       uptime: process.uptime(),
+      uptime_s: Math.round(process.uptime()),
+      db,
+      memory,
+      event_loop_lag_ms,
       reconnecting: reconnect.reconnecting,
       reconnectTotal: reconnect.total,
       reconnectDone: reconnect.done,
@@ -342,17 +459,48 @@ start().catch((err) => {
   process.exit(1);
 });
 
-// Graceful shutdown — kill all PTY sessions
-function shutdown() {
-  console.log('\n🌊 Shutting down OctoAlly...');
-  killAllSessions();
+// Graceful shutdown — preserve sessions for reconnection after restart
+//
+// Sequence:
+// 1. Stop accepting new connections (app.close)
+// 2. Notify WS clients with 'server-restarting', mark sessions 'detached' in DB
+// 3. SIGTERM workers (3s grace) -> escalate to SIGKILL if hung
+// 4. Exit cleanly
+// 5. Hard timeout at 8s (under systemd's default 10s TimeoutStopSec)
+async function shutdown(signal: string) {
+  if (shuttingDown) return; // prevent double-shutdown from SIGINT+SIGTERM race
+  shuttingDown = true;
+
+  console.log(`\n🌊 Shutting down OctoAlly (${signal})...`);
+
+  // Hard timeout: force exit at 8s regardless (must fit under systemd's 10s)
+  const hardTimeout = setTimeout(() => {
+    console.error('🌊 Shutdown timed out after 8s — forcing exit');
+    process.exit(1);
+  }, 8000);
+  hardTimeout.unref();
+
+  try {
+    // 1. Stop accepting new HTTP/WS connections
+    if (serverApp) {
+      await serverApp.close();
+    }
+
+    // 2-3. Notify WS clients, mark DB, SIGTERM->SIGKILL workers
+    await killAllSessions();
+  } catch (err) {
+    console.error('Error during shutdown:', err);
+  }
+
+  console.log('🌊 Shutdown complete');
   process.exit(0);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('uncaughtException', (err) => {
   console.error('Uncaught exception — cleaning up sessions:', err);
-  killAllSessions();
+  // Cannot await in uncaught exception handler — use sync fallback
+  killAllSessionsSync();
   process.exit(1);
 });

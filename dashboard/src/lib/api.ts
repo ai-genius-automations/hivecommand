@@ -1,3 +1,5 @@
+import type { SkillItem, SystemFeature, Integration } from '../types/skills';
+
 const API_BASE = '/api';
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
@@ -83,7 +85,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: string, data: { name?: string; description?: string; session_prompt?: string | null; openclaw_prompt?: string | null; default_web_url?: string | null; skip_permissions?: number; color?: string }) =>
+    update: (id: string, data: { name?: string; path?: string; description?: string; session_prompt?: string | null; openclaw_prompt?: string | null; default_web_url?: string | null; skip_permissions?: number; color?: string }) =>
       fetchJSON<{ ok: boolean; project: Project }>(`/projects/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -246,6 +248,18 @@ export const api = {
     fetchJSON<{ ok: boolean }>('/open-terminal', { method: 'POST', body: JSON.stringify({ path }) }),
   versionCheck: () =>
     fetchJSON<{ current: string; latest: string; name: string; url: string; prerelease: boolean; channel: string; updateAvailable: boolean }>('/version-check'),
+  skills: {
+    list: (projectPath?: string) => {
+      const qs = projectPath ? `?project_path=${encodeURIComponent(projectPath)}` : '';
+      return fetchJSON<{ skills: SkillItem[]; categories: string[]; total: number }>(`/skills${qs}`);
+    },
+    systemStatus: () =>
+      fetchJSON<{ features: SystemFeature[]; integrations: Integration[] }>('/system/status'),
+    intents: (projectPath?: string) => {
+      const qs = projectPath ? `?project_path=${encodeURIComponent(projectPath)}` : '';
+      return fetchJSON<{ intents: Array<{ command: string; name: string; category: string; description: string; intents: string[]; weight: number }>; total: number }>(`/skills/intents${qs}`);
+    },
+  },
 };
 
 // Types
