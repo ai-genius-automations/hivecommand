@@ -156,7 +156,7 @@ function ProjectForm({
   const [initialAgentsMd, setInitialAgentsMd] = useState('');
   const [initialSettingsJson, setInitialSettingsJson] = useState('');
 
-  const projectPath = mode === 'edit' ? path : path;
+  const projectPath = path;
 
   // Load CLAUDE.md (edit mode only)
   const claudeMdQuery = useQuery({
