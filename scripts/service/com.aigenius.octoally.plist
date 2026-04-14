@@ -9,7 +9,7 @@
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>(/usr/local/bin/node -e "require('better-sqlite3')" 2&gt;/dev/null || /usr/local/bin/npm rebuild better-sqlite3) &amp;&amp; exec /usr/local/bin/node __OCTOALLY_DIR__/server/dist/index.js</string>
+    <string>(__NODE_BIN__ -e "require('better-sqlite3'); require('node-pty-prebuilt-multiarch')" 2&gt;/dev/null || "$(dirname __NODE_BIN__)/npm" rebuild better-sqlite3 node-pty-prebuilt-multiarch) &amp;&amp; exec __NODE_BIN__ __OCTOALLY_DIR__/server/dist/index.js</string>
   </array>
 
   <key>WorkingDirectory</key>
