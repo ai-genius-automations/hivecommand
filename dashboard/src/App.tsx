@@ -3,10 +3,9 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tan
 import { trpc, createTRPCClient } from './lib/trpc';
 import { connectStream, useStreamStore, setQueryClient } from './lib/websocket';
 import { api } from './lib/api';
-import { getPendingTerminalCount, onTerminalConnectionChange } from './components/Terminal';
 import { ProjectDashboard } from './components/ProjectDashboard';
 import { ProjectView, cleanupProjectStorage } from './components/ProjectView';
-import { X, LayoutGrid, FolderOpen, Monitor, Loader2, Settings, ArrowUpCircle } from 'lucide-react';
+import { X, LayoutGrid, FolderOpen, Monitor, Settings, ArrowUpCircle } from 'lucide-react';
 import { isDesktop, isElectron, getDesktopVersion } from './lib/tauri';
 import { AgentGuideButton } from './components/AgentGuide';
 import { CloseTabModal } from './components/CloseTabModal';
@@ -14,6 +13,7 @@ import { CloseAppModal } from './components/CloseAppModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ActiveTerminals } from './components/ActiveTerminals';
 import { GlobalMicButton } from './components/GlobalMicButton';
+import { GlobalDictationButton } from './components/GlobalDictationButton';
 import { ModelDownloadModal } from './components/ModelDownloadModal';
 import { initSpeechListeners } from './lib/speech';
 import { onVoiceCommand } from './lib/voice-commands';
@@ -168,47 +168,6 @@ function Dashboard() {
     }
   }, []);
 
-  // Track terminals that are connecting (WS not yet open).
-  // Subscribe to the global connection tracker from Terminal.tsx.
-  const [pendingTerminals, setPendingTerminals] = useState(getPendingTerminalCount);
-  useEffect(() => {
-    return onTerminalConnectionChange(() => setPendingTerminals(getPendingTerminalCount()));
-  }, []);
-
-  // Show indicator while terminals are connecting, then briefly after all connect.
-  // Track total and connected count so we can show "Connected 2 of 6 terminals".
-  // Only show during initial page load or full refresh — not when navigating between tabs.
-  const [connectTotal, setConnectTotal] = useState(0);
-  const [connectDone, setConnectDone] = useState(0);
-  const [showReconnectIndicator, setShowReconnectIndicator] = useState(false);
-  const initialLoadRef = useRef(true);
-
-  // After the initial connection burst settles, lock out the indicator for navigation
-  useEffect(() => {
-    if (!initialLoadRef.current) return;
-    if (pendingTerminals > 0) {
-      setConnectTotal((prev) => Math.max(prev, pendingTerminals + connectDone));
-      setShowReconnectIndicator(true);
-    }
-  }, [pendingTerminals, connectDone]);
-
-  useEffect(() => {
-    if (connectTotal > 0) {
-      setConnectDone(connectTotal - pendingTerminals);
-    }
-  }, [pendingTerminals, connectTotal]);
-
-  useEffect(() => {
-    if (showReconnectIndicator && connectTotal > 0 && pendingTerminals === 0) {
-      const timer = setTimeout(() => {
-        setShowReconnectIndicator(false);
-        setConnectTotal(0);
-        setConnectDone(0);
-        initialLoadRef.current = false; // Done — suppress indicator for future navigation
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [showReconnectIndicator, connectTotal, pendingTerminals]);
   const activeSessionCount = sessions.filter(
     (s) => s.status === 'running' || s.status === 'detached'
   ).length;
@@ -481,22 +440,8 @@ function Dashboard() {
             )}
           </button>
           <GlobalMicButton />
+          <GlobalDictationButton />
           <AgentGuideButton />
-          {showReconnectIndicator && (
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium"
-              style={{ background: 'var(--bg-tertiary)', color: 'var(--warning, #f59e0b)' }}
-            >
-              {pendingTerminals > 0 ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Connected {connectDone} of {connectTotal} terminal{connectTotal !== 1 ? 's' : ''}</span>
-                </>
-              ) : (
-                <span>All {connectTotal} terminal{connectTotal !== 1 ? 's' : ''} connected</span>
-              )}
-            </div>
-          )}
           <button
             onClick={() => setShowSettings(true)}
             className="p-1.5 rounded-md transition-colors hover:opacity-80"

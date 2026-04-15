@@ -19,8 +19,9 @@ export function SessionMicButton({ onText, small }: SessionMicButtonProps) {
   const speaking = useSpeechStore((s) => s.speaking);
   const transcribing = useSpeechStore((s) => s.transcribing);
   const available = useSpeechStore((s) => s.available);
+  const globalDictationActive = useSpeechStore((s) => s.globalDictationActive);
 
-  const isPTTActive = micMode === 'push-to-talk';
+  const isPTTActive = micMode === 'push-to-talk' && !globalDictationActive;
 
   // Use ref so the callback always has the latest onText without re-registering
   const onTextRef = useRef(onText);
@@ -52,8 +53,10 @@ export function SessionMicButton({ onText, small }: SessionMicButtonProps) {
 
   if (!available) return null;
 
-  // Don't show PTT button if global mic is already active
+  // Don't show PTT button if global mic is already active, or if the top-bar
+  // global dictation button owns the mic.
   if (micMode === 'global') return null;
+  if (globalDictationActive) return null;
 
   const handleClick = () => {
     toggleMic('push-to-talk');

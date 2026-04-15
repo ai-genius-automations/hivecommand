@@ -4,113 +4,11 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Mic, MicOff, Loader2, RotateCcw, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react';
-import { useSpeechStore, toggleMic, stopMic } from '../lib/speech';
+import { RotateCcw, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react';
+import { useSpeechStore } from '../lib/speech';
 import { api } from '../lib/api';
 import { HistoryViewer } from './HistoryViewer';
 import '@xterm/xterm/css/xterm.css';
-
-/**
- * Mic button for terminal voice input.
- * Watches lastTranscription in the store directly instead of using the global
- * callback — avoids the "wrong terminal gets the text" bug when multiple
- * Terminal components are mounted.
- */
-function TerminalMicButton({ wsRef, termRef }: { wsRef: React.RefObject<WebSocket | null>; termRef: React.RefObject<XTerm | null> }) {
-  const micMode = useSpeechStore((s) => s.micMode);
-  const micReady = useSpeechStore((s) => s.micReady);
-  const speaking = useSpeechStore((s) => s.speaking);
-  const transcribing = useSpeechStore((s) => s.transcribing);
-  const lastTranscription = useSpeechStore((s) => s.lastTranscription);
-  const available = useSpeechStore((s) => s.available);
-
-  // This specific button instance "owns" the PTT session
-  const [ownsSession, setOwnsSession] = useState(false);
-
-  // When this button starts PTT, mark ownership
-  const handleClick = () => {
-    if (micMode === 'push-to-talk') {
-      // Turning off
-      stopMic();
-      setOwnsSession(false);
-    } else if (micMode === 'off') {
-      // Turning on — this terminal owns it
-      setOwnsSession(true);
-      toggleMic('push-to-talk');
-    }
-  };
-
-  // Send transcription to terminal when this button owns the PTT session
-  const lastSentRef = useRef('');
-  useEffect(() => {
-    if (!ownsSession || !lastTranscription || lastTranscription === lastSentRef.current) return;
-    lastSentRef.current = lastTranscription;
-    const w = wsRef.current;
-    if (w && w.readyState === WebSocket.OPEN) {
-      w.send(JSON.stringify({ type: 'input', data: lastTranscription }));
-      // Focus terminal so user can hit Enter or continue typing
-      termRef.current?.focus();
-    }
-  }, [lastTranscription, ownsSession, wsRef, termRef]);
-
-  // Reset ownership if mic is turned off externally
-  useEffect(() => {
-    if (micMode === 'off') setOwnsSession(false);
-  }, [micMode]);
-
-  if (!available) return null;
-  if (micMode === 'global') return null;
-
-  const isPTTActive = micMode === 'push-to-talk' && ownsSession;
-  const isCalibrating = isPTTActive && !micReady;
-  const isListening = isPTTActive && micReady && !speaking && !transcribing;
-  const isSpeaking = isPTTActive && micReady && speaking;
-  const isTranscribing = isPTTActive && micReady && !speaking && transcribing;
-
-  const bgColor = isCalibrating
-    ? '#d97706'
-    : isSpeaking
-      ? '#ea580c'
-      : isTranscribing
-        ? '#16a34a'
-        : isListening
-          ? '#16a34a'
-          : 'var(--accent)';
-
-  const textColor = isPTTActive ? 'white' : 'white';
-
-  const title = isCalibrating
-    ? 'Calibrating microphone...'
-    : isSpeaking
-      ? 'Recording speech...'
-      : isTranscribing
-        ? 'Transcribing...'
-        : isListening
-          ? 'Listening — speak now'
-          : 'Voice input';
-
-  return (
-    <button
-      onClick={handleClick}
-      title={title}
-      className={`flex items-center justify-center rounded transition-colors px-1.5 py-1${isPTTActive ? '' : ' opacity-70 hover:opacity-100'}`}
-      style={{ background: bgColor, color: textColor, border: 'none' }}
-    >
-      <div className="relative flex items-center justify-center">
-        {isTranscribing ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
-        ) : (
-          <>
-            {isPTTActive ? <Mic className="w-3 h-3" /> : <MicOff className="w-3 h-3" />}
-            {isSpeaking && (
-              <span className="absolute inset-0 rounded-full animate-ping" style={{ background: 'rgba(255,255,255,0.4)' }} />
-            )}
-          </>
-        )}
-      </div>
-    </button>
-  );
-}
 
 // Global event: when any terminal connects, notify all others to retry immediately.
 // This prevents staggered reconnects after a server restart.
@@ -826,7 +724,6 @@ export function Terminal({ sessionId, visible = true, suspended = false, passive
       <div className="absolute top-2 right-5 z-10 flex items-center gap-2">
         {connected && !suspended && (
           <>
-            <TerminalMicButton wsRef={wsRef} termRef={termRef} />
             <button
               onClick={() => {
                 const term = termRef.current;

@@ -65,6 +65,10 @@ interface SpeechStore {
   wakeWordPhase: 'passive' | 'active' | null; // null when not in wake-word mode
   wakePhrase: string;
 
+  // Global dictation button (top-bar Captions button) is active — inline
+  // SessionMicButton should step aside so only one receives transcriptions.
+  globalDictationActive: boolean;
+
   // Dictation mode (started via "start transcribe" voice command)
   dictationMode: boolean;
   // True when dictation was started from command mode (should return to command mode on stop)
@@ -103,6 +107,7 @@ interface SpeechStore {
   setWakeWordPhase: (phase: 'passive' | 'active' | null) => void;
   setWakePhrase: (phrase: string) => void;
   setDictationMode: (v: boolean) => void;
+  setGlobalDictationActive: (v: boolean) => void;
   setCommandModeActive: (v: boolean) => void;
   setPreDictationMode: (mode: 'off' | 'global' | 'push-to-talk' | 'wake-word') => void;
   setDownloadProgress: (p: number | null) => void;
@@ -135,6 +140,7 @@ export const useSpeechStore = create<SpeechStore>((set) => ({
   wakeWordPhase: null,
   wakePhrase: 'hey octoally',
   dictationMode: false,
+  globalDictationActive: false,
   commandModeActive: false,
   preDictationMode: 'off',
   downloadProgress: null,
@@ -158,6 +164,7 @@ export const useSpeechStore = create<SpeechStore>((set) => ({
   setWakeWordPhase: (phase) => set({ wakeWordPhase: phase }),
   setWakePhrase: (phrase) => set({ wakePhrase: phrase }),
   setDictationMode: (v) => set({ dictationMode: v }),
+  setGlobalDictationActive: (v) => set({ globalDictationActive: v }),
   setCommandModeActive: (v) => set({ commandModeActive: v }),
   setPreDictationMode: (mode) => set({ preDictationMode: mode }),
   setDownloadProgress: (p) => set({ downloadProgress: p }),
