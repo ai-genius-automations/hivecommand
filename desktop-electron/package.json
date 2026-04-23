@@ -86,5 +86,8 @@
   },
   "optionalDependencies": {
     "dmg-license": "^1.0.11"
+  },
+  "overrides": {
+    "@xmldom/xmldom": ">=0.8.13"
   }
 }
